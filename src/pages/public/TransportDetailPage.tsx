@@ -73,7 +73,7 @@ export default function TransportDetailPage() {
       {remoteError && <Notice tone="danger">{remoteError}</Notice>}
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         <div className="space-y-3">
-          <RouteMap from={o.from} to={o.to} height={380} onRoute={setInfo} />
+          <RouteMap from={o.from} to={o.to} height={380} onRoute={setInfo} simulate />
           {info && <p className="text-sm text-muted">Distance {info.approximate ? 'estimée' : 'par la route'} : <strong className="text-ink">{info.km} km</strong>{info.minutes ? <> · durée environ <strong className="text-ink">{Math.floor(info.minutes / 60)} h {String(info.minutes % 60).padStart(2, '0')}</strong></> : null}</p>}
         </div>
         <div className="space-y-4">

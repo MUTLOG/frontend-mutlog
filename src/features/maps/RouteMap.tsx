@@ -13,14 +13,17 @@ interface Props {
   trace?: MapPoint[]
   height?: number
   onRoute?: (info: RouteInfo) => void
+  simulate?: boolean
 }
 
 /** Itinéraire sur Google Maps (Directions) ; schéma de secours si la clé est absente ou refusée. */
-export default function RouteMap({ from, to, trace = [], height = 320, onRoute }: Props) {
+export default function RouteMap({ from, to, trace = [], height = 320, onRoute, simulate = false }: Props) {
   const a = findCity(from)
   const b = findCity(to)
   const ref = useRef<HTMLDivElement>(null)
   const [fallback, setFallback] = useState(!mapsConfigured())
+  const [simStep, setSimStep] = useState(0)
+  useEffect(() => { if (!simulate) return; const id = window.setInterval(() => setSimStep(v => (v + 1) % 101), 700); return () => window.clearInterval(id) }, [simulate])
   const traceKey = JSON.stringify(trace)
   const onRouteRef = useRef(onRoute)
   onRouteRef.current = onRoute
@@ -70,7 +73,7 @@ export default function RouteMap({ from, to, trace = [], height = 320, onRoute }
     return <div className="flex items-center justify-center rounded-card border border-line bg-primary-soft text-sm text-muted" style={{ height }}>Itinéraire indisponible : localité inconnue.</div>
   }
   if (fallback) return <SchematicMap a={a} b={b} aName={from} bName={to} trace={trace} height={height} onRoute={onRoute} />
-  return <div ref={ref} className="w-full overflow-hidden rounded-card border border-line" style={{ height }} role="img" aria-label={`Carte de l'itinéraire ${from} vers ${to}`} />
+  return <div className="relative"><div ref={ref} className="w-full overflow-hidden rounded-card border border-line" style={{ height }} role="img" aria-label={`Carte de l'itinéraire ${from} vers ${to}`} />{simulate && <><div aria-hidden="true" className="pointer-events-none absolute z-10 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-primary text-lg shadow-lg" style={{left:`calc(8% + ${simStep * .84}%)`,top:`calc(12% + ${Math.sin(simStep/100*Math.PI*2)*18 + 18}%)`,transition:'left 650ms linear, top 650ms linear'}}>🚚</div><div className="absolute bottom-3 left-3 rounded-md border border-line bg-white/95 px-3 py-2 text-xs font-semibold text-ink shadow-sm">Simulation visuelle — position non réelle</div></>}</div>
 }
 
 function SchematicMap({ a, b, aName, bName, trace, height, onRoute }: { a: { lat: number; lng: number }; b: { lat: number; lng: number }; aName: string; bName: string; trace: MapPoint[]; height: number; onRoute?: (i: RouteInfo) => void }) {

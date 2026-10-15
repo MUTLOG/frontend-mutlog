@@ -1,7 +1,7 @@
 import {
-  BarChart3, Bell, CalendarCheck, ClipboardList, CreditCard, FileText, History, Home, Inbox, Layers, MessageSquare,
+  AlertTriangle, BarChart3, Bell, CalendarCheck, ClipboardList, CreditCard, FileText, History, Home, Inbox, Layers, MessageSquare,
   Package, Percent, Route, ScrollText, Search, Settings, ShieldCheck, Star, Truck, User, Users, Wallet, Activity,
-  type LucideIcon,
+  type LucideIcon, 
 } from 'lucide-react'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon }
@@ -41,6 +41,7 @@ export const transporteurSpace: SpaceConfig = {
     { to: '/transporteur/demandes', label: 'Demandes reçues', icon: Inbox },
     { to: '/transporteur/reservations', label: 'Mes réservations', icon: CalendarCheck },
     { to: '/transporteur/transports', label: 'Mes transports', icon: Package },
+    { to: '/transporteur/pannes', label: 'Signaler une panne', icon: AlertTriangle },
     { to: '/transporteur/vehicules', label: 'Mes véhicules', icon: Truck },
     { to: '/transporteur/revenus', label: 'Revenus', icon: Wallet },
     { to: '/transporteur/paiements', label: 'Mes paiements', icon: CreditCard },
@@ -58,6 +59,7 @@ export const adminSpace: SpaceConfig = {
     { to: '/admin/utilisateurs', label: 'Utilisateurs', icon: Users },
     { to: '/admin/clients', label: 'Clients', icon: User },
     { to: '/admin/transporteurs', label: 'Transporteurs', icon: ShieldCheck },
+    { to: '/admin/pannes', label: 'Signalements de panne', icon: AlertTriangle },
     { to: '/admin/vehicules', label: 'Véhicules', icon: Truck },
     { to: '/admin/demandes', label: 'Demandes de transport', icon: FileText },
     { to: '/admin/offres', label: 'Offres de transport', icon: Route },

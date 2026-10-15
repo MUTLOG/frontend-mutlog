@@ -26,6 +26,7 @@ const ClientReservationsPage = page(() => import('@/pages/client/ClientShipments
 const ClientShipmentsPage = page(() => import('@/pages/client/ClientShipments'), 'ClientShipmentsPage')
 const ShipmentDetailPage = page(() => import('@/pages/client/ClientShipments'), 'ShipmentDetailPage')
 const CarrierDashboard = page(() => import('@/pages/transporteur/CarrierDashboard'), 'default')
+const CarrierBreakdownPage = page(() => import('@/pages/transporteur/CarrierBreakdownPage'), 'default')
 const CarrierOffersPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierOffersPage')
 const CarrierPaymentsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierPaymentsPage')
 const CarrierReservationsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierReservationsPage')
@@ -41,6 +42,7 @@ const UsersPage = page(() => import('@/pages/admin/AdminUsers'), 'UsersPage') as
 const AdminRequestsPage = page(() => import('@/pages/admin/AdminMatching'), 'AdminRequestsPage')
 const MatchingPage = page(() => import('@/pages/admin/AdminMatching'), 'MatchingPage')
 const PoolingsPage = page(() => import('@/pages/admin/AdminMatching'), 'PoolingsPage')
+const AdminBreakdownReportsPage = page(() => import('@/pages/admin/AdminBreakdownReports'), 'AdminBreakdownReportsPage')
 const CommissionsPage = page(() => import('@/pages/admin/AdminFinance'), 'CommissionsPage')
 const AdminOffersPage = page(() => import('@/pages/admin/AdminPages'), 'AdminOffersPage')
 const AdminPaymentsPage = page(() => import('@/pages/admin/AdminPages'), 'AdminPaymentsPage')
@@ -108,6 +110,7 @@ export default function App() {
           <Route path="demandes/:id" element={<ReceivedRequestDetailPage />} />
           <Route path="reservations" element={<CarrierReservationsPage />} />
           <Route path="transports" element={<CarrierTransportsPage />} />
+          <Route path="pannes" element={<CarrierBreakdownPage />} />
           <Route path="vehicules" element={<VehiclesPage />} />
           <Route path="revenus" element={<RevenuePage />} />
           <Route path="paiements" element={<CarrierPaymentsPage />} />
@@ -134,6 +137,7 @@ export default function App() {
           <Route path="reservations" element={<AdminReservationsPage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="transports" element={<TrackingPage />} />
+          <Route path="pannes" element={<AdminBreakdownReportsPage />} />
           <Route path="paiements" element={<AdminPaymentsPage />} />
           <Route path="commissions" element={<CommissionsPage />} />
           <Route path="evaluations" element={<AdminReviewsPage />} />

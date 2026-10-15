@@ -55,6 +55,8 @@ export const carrierApi = {
   respondToPooling: (id: string | number, accept: boolean) => apiData<unknown>(`/carrier/poolings/${id}/respond`, { method: 'POST', json: { accept } }),
   transports: () => apiData<unknown>('/carrier/transports'),
   revenue: () => apiData<unknown>('/carrier/revenue'),
+  breakdowns: () => apiData<unknown>('/carrier/breakdowns'),
+  createBreakdown: (input: Record<string, unknown>) => apiData<unknown>('/carrier/breakdowns', { method: 'POST', json: input }),
 }
 
 export const adminApi = {
@@ -84,6 +86,13 @@ export const adminApi = {
   settings: () => apiData<unknown>('/admin/settings'),
   updateSettings: (input: Record<string, unknown>) => apiData<unknown>('/admin/settings', { method: 'PUT', json: input }),
   audit: () => apiData<unknown>('/admin/audit'),
+  breakdowns: (filters: { status?: string; urgency?: string } = {}) => {
+  const q = new URLSearchParams()
+  if (filters.status) q.set('status', filters.status)
+  if (filters.urgency) q.set('urgency', filters.urgency)
+  return apiData<unknown>(`/admin/breakdowns${q.size ? `?${q}` : ''}`)
+  },
+  updateBreakdown: (id: number | string, input: Record<string, unknown>) => apiData<unknown>(`/admin/breakdowns/${id}`, { method: 'PUT', json: input }),
 }
 
 export const sharedApi = {
