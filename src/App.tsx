@@ -1,122 +1,150 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { lazy, Suspense } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import PublicLayout from '@/layouts/PublicLayout'
+import ClientLayout from '@/layouts/ClientLayout'
+import TransporteurLayout from '@/layouts/TransporteurLayout'
+import AdminLayout from '@/layouts/AdminLayout'
+import { RequireRole } from '@/features/auth/useAuth'
+import HomePage from '@/pages/public/HomePage'
+import SearchPage from '@/pages/public/SearchPage'
+import TransportDetailPage from '@/pages/public/TransportDetailPage'
+import DesignSystemPage from '@/pages/public/DesignSystemPage'
+import NotFoundPage from '@/pages/public/NotFoundPage'
+import { ForgotPasswordPage, LoginPage, RegisterPage } from '@/pages/public/AuthPages'
+import { AboutPage, ContactPage, HowItWorksPage, ServicesPage, TermsPage } from '@/pages/public/StaticPages'
+import { EvaluationsPage, HistoryPage, MessagesPage, NotificationsPage, ProfilePage } from '@/pages/shared/SharedPages'
+const page = <T extends object>(load: () => Promise<T>, key: keyof T) =>
+  lazy(() => load().then((m) => ({ default: m[key] as unknown as React.ComponentType })))
 
-function App() {
-  const [count, setCount] = useState(0)
+// Chaque espace est chargé à la demande : le site public reste léger sur mobile.
+const ClientDashboard = page(() => import('@/pages/client/ClientDashboard'), 'default')
+const ClientRequestsPage = page(() => import('@/pages/client/ClientRequests'), 'ClientRequestsPage')
+const NewRequestPage = page(() => import('@/pages/client/ClientRequests'), 'NewRequestPage')
+const RequestDetailPage = page(() => import('@/pages/client/ClientRequests'), 'RequestDetailPage')
+const ClientPaymentsPage = page(() => import('@/pages/client/ClientShipments'), 'ClientPaymentsPage')
+const ClientReservationsPage = page(() => import('@/pages/client/ClientShipments'), 'ClientReservationsPage')
+const ClientShipmentsPage = page(() => import('@/pages/client/ClientShipments'), 'ClientShipmentsPage')
+const ShipmentDetailPage = page(() => import('@/pages/client/ClientShipments'), 'ShipmentDetailPage')
+const CarrierDashboard = page(() => import('@/pages/transporteur/CarrierDashboard'), 'default')
+const CarrierOffersPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierOffersPage')
+const CarrierPaymentsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierPaymentsPage')
+const CarrierReservationsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierReservationsPage')
+const CarrierTransportsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'CarrierTransportsPage')
+const NewOfferPage = page(() => import('@/pages/transporteur/CarrierPages'), 'NewOfferPage')
+const OfferDetailPage = page(() => import('@/pages/transporteur/CarrierPages'), 'OfferDetailPage')
+const ReceivedRequestDetailPage = page(() => import('@/pages/transporteur/CarrierPages'), 'ReceivedRequestDetailPage')
+const ReceivedRequestsPage = page(() => import('@/pages/transporteur/CarrierPages'), 'ReceivedRequestsPage')
+const RevenuePage = page(() => import('@/pages/transporteur/CarrierPages'), 'RevenuePage')
+const VehiclesPage = page(() => import('@/pages/transporteur/CarrierPages'), 'VehiclesPage') as React.ComponentType<{ adminView?: boolean }>
+const AdminDashboard = page(() => import('@/pages/admin/AdminDashboard'), 'AdminDashboard')
+const UsersPage = page(() => import('@/pages/admin/AdminUsers'), 'UsersPage') as React.ComponentType<{ only?: 'client' | 'transporteur' }>
+const AdminRequestsPage = page(() => import('@/pages/admin/AdminMatching'), 'AdminRequestsPage')
+const MatchingPage = page(() => import('@/pages/admin/AdminMatching'), 'MatchingPage')
+const PoolingsPage = page(() => import('@/pages/admin/AdminMatching'), 'PoolingsPage')
+const CommissionsPage = page(() => import('@/pages/admin/AdminFinance'), 'CommissionsPage')
+const AdminOffersPage = page(() => import('@/pages/admin/AdminPages'), 'AdminOffersPage')
+const AdminPaymentsPage = page(() => import('@/pages/admin/AdminPages'), 'AdminPaymentsPage')
+const AdminReservationsPage = page(() => import('@/pages/admin/AdminPages'), 'AdminReservationsPage')
+const AdminReviewsPage = page(() => import('@/pages/admin/AdminPages'), 'AdminReviewsPage')
+const AuditPage = page(() => import('@/pages/admin/AdminPages'), 'AuditPage')
+const OperationsPage = page(() => import('@/pages/admin/AdminPages'), 'OperationsPage')
+const SettingsPage = page(() => import('@/pages/admin/AdminPages'), 'SettingsPage')
+const StatsPage = page(() => import('@/pages/admin/AdminPages'), 'StatsPage')
+const TrackingPage = page(() => import('@/pages/admin/AdminPages'), 'TrackingPage')
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function Loading() {
+  return <div className="flex min-h-[40vh] items-center justify-center" role="status" aria-live="polite"><span className="h-8 w-8 animate-spin rounded-full border-4 border-line border-t-primary" /><span className="sr-only">Chargement…</span></div>
 }
 
-export default App
+export default function App() {
+  return (
+    <Suspense fallback={<Loading />}>
+    <Routes>
+      <Route element={<PublicLayout />}>
+        <Route index element={<HomePage />} />
+        <Route path="comment-ca-marche" element={<HowItWorksPage />} />
+        <Route path="services" element={<ServicesPage />} />
+        <Route path="a-propos" element={<AboutPage />} />
+        <Route path="contact" element={<ContactPage />} />
+        <Route path="conditions" element={<TermsPage />} />
+        <Route path="rechercher" element={<SearchPage />} />
+        <Route path="transports/:id" element={<TransportDetailPage />} />
+        <Route path="connexion" element={<LoginPage />} />
+        <Route path="inscription" element={<RegisterPage />} />
+        <Route path="mot-de-passe-oublie" element={<ForgotPasswordPage />} />
+        <Route path="design-system" element={<DesignSystemPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+
+      <Route element={<RequireRole role="client" />}>
+        <Route path="client" element={<ClientLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<ClientDashboard />} />
+          <Route path="demandes" element={<ClientRequestsPage />} />
+          <Route path="demandes/nouvelle" element={<NewRequestPage />} />
+          <Route path="demandes/:id" element={<RequestDetailPage />} />
+          <Route path="rechercher" element={<SearchPage />} />
+          <Route path="transports/:id" element={<TransportDetailPage />} />
+          <Route path="reservations" element={<ClientReservationsPage />} />
+          <Route path="expeditions" element={<ClientShipmentsPage />} />
+          <Route path="expeditions/:id" element={<ShipmentDetailPage />} />
+          <Route path="paiements" element={<ClientPaymentsPage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="historique" element={<HistoryPage />} />
+          <Route path="evaluations" element={<EvaluationsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="profil" element={<ProfilePage />} />
+        </Route>
+      </Route>
+
+      <Route element={<RequireRole role="transporteur" />}>
+        <Route path="transporteur" element={<TransporteurLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<CarrierDashboard />} />
+          <Route path="trajets" element={<CarrierOffersPage />} />
+          <Route path="trajets/nouveau" element={<NewOfferPage />} />
+          <Route path="trajets/:id" element={<OfferDetailPage />} />
+          <Route path="demandes" element={<ReceivedRequestsPage />} />
+          <Route path="demandes/:id" element={<ReceivedRequestDetailPage />} />
+          <Route path="reservations" element={<CarrierReservationsPage />} />
+          <Route path="transports" element={<CarrierTransportsPage />} />
+          <Route path="vehicules" element={<VehiclesPage />} />
+          <Route path="revenus" element={<RevenuePage />} />
+          <Route path="paiements" element={<CarrierPaymentsPage />} />
+          <Route path="avis" element={<EvaluationsPage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="historique" element={<HistoryPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="profil" element={<ProfilePage />} />
+        </Route>
+      </Route>
+
+      <Route element={<RequireRole role="admin" />}>
+        <Route path="admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="utilisateurs" element={<UsersPage />} />
+          <Route path="clients" element={<UsersPage only="client" />} />
+          <Route path="transporteurs" element={<UsersPage only="transporteur" />} />
+          <Route path="vehicules" element={<VehiclesPage adminView />} />
+          <Route path="demandes" element={<AdminRequestsPage />} />
+          <Route path="offres" element={<AdminOffersPage />} />
+          <Route path="matching" element={<MatchingPage />} />
+          <Route path="mutualisations" element={<PoolingsPage />} />
+          <Route path="reservations" element={<AdminReservationsPage />} />
+          <Route path="operations" element={<OperationsPage />} />
+          <Route path="transports" element={<TrackingPage />} />
+          <Route path="paiements" element={<AdminPaymentsPage />} />
+          <Route path="commissions" element={<CommissionsPage />} />
+          <Route path="evaluations" element={<AdminReviewsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="statistiques" element={<StatsPage />} />
+          <Route path="audit" element={<AuditPage />} />
+          <Route path="parametres" element={<SettingsPage />} />
+          <Route path="profil" element={<ProfilePage />} />
+        </Route>
+      </Route>
+    </Routes>
+    </Suspense>
+  )
+}
