@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, BarChart3, Bell, CalendarCheck, ClipboardList, CreditCard, FileText, History, Home, Inbox, Layers, MessageSquare,
+  AlertTriangle, Mail, BarChart3, Bell, CalendarCheck, ClipboardList, CreditCard, FileText, History, Home, Inbox, Layers, MessageSquare,
   Package, Percent, Route, ScrollText, Search, Settings, ShieldCheck, Star, Truck, User, Users, Wallet, Activity,
   type LucideIcon, 
 } from 'lucide-react'
@@ -72,6 +72,7 @@ export const adminSpace: SpaceConfig = {
     { to: '/admin/commissions', label: 'Commissions', icon: Percent },
     { to: '/admin/evaluations', label: 'Évaluations', icon: Star },
     { to: '/admin/notifications', label: 'Notifications', icon: Bell },
+    { to: '/admin/messages-contact', label: 'Messages de contact', icon: Mail },
     { to: '/admin/statistiques', label: 'Statistiques', icon: BarChart3 },
     { to: '/admin/audit', label: 'Journal d\'activité', icon: ScrollText },
     { to: '/admin/parametres', label: 'Paramètres', icon: Settings },

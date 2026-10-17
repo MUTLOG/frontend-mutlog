@@ -21,7 +21,7 @@ export const LEGAL = {
     ifu: TODO,
     address: TODO,
     phone: TODO,
-    email: TODO,
+    email: 'milalogistique@gmail.com',
     country: 'Bénin',
   },
 
