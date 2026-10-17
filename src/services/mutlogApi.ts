@@ -1,5 +1,6 @@
 /** Couche d'accès centralisée aux routes décrites dans api-endpoints.md. */
 import { api, apiData } from './api'
+import type { ApiUser } from './api'
 
 export const authApi = {
   login: (phone: string, password: string) => api<{ user: import('./api').ApiUser; token: string }>('/auth/login', { method: 'POST', json: { phone, password } }),
@@ -80,11 +81,12 @@ export const adminApi = {
   dashboard: (query = '') => apiData<unknown>(`/admin/dashboard${query}`),
   stats: () => apiData<unknown>('/admin/stats'),
   contactMessages: () => apiData<ContactMessage[]>('/admin/contact-messages'),
-  users: (query = '') => apiData<unknown>(`/admin/users${query}`),
+  users: (query = '') => apiData<ApiUser[]>(`/admin/users${query}`),
   user: (id: string | number) => apiData<unknown>(`/admin/users/${id}`),
   createUser: (input: Record<string, unknown>) => apiData<unknown>('/admin/users', { method: 'POST', json: input }),
   updateUser: (id: string | number, input: Record<string, unknown>) => apiData<unknown>(`/admin/users/${id}`, { method: 'PUT', json: input }),
   setUserStatus: (id: string | number, input: Record<string, unknown>) => apiData<unknown>(`/admin/users/${id}/status`, { method: 'PUT', json: input }),
+  deleteUser: (id: string | number) => api(`/admin/users/${id}`, { method: 'DELETE' }),
   vehicles: () => apiData<unknown>('/admin/vehicles'),
   offers: () => apiData<unknown>('/admin/offers'),
   requests: (query = '') => apiData<unknown>(`/admin/requests${query}`),

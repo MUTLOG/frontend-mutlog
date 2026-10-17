@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ask } from '@/components/shared/confirm'
 import { DataTable, EmptyState, fmtDate, fmtT, Modal, Notice, Stars, useFlash } from '@/components/shared/ui-bits'
 import { useAuth } from '@/features/auth/useAuth'
+import { apiEnabled } from '@/services/api'
+import type { ApiUser } from '@/services/api'
+import { adminApi } from '@/services/mutlogApi'
 import { CITIES } from '@/domain/geo'
 import type { Role, User, UserType } from '@/domain/types'
 import { formatPhone } from '@/domain/phone'
@@ -55,9 +59,171 @@ export function UsersPage({ only }: { only?: Role }) {
         ]} />
       </div>
       {create && <CreateUserModal onClose={() => setCreate(false)} onDone={() => { setCreate(false); flash.ok('Compte créé et activé. Communiquez le mot de passe provisoire à l\'utilisateur.') }} />}
+      {!only && <AdminAccountsPanel />}
       {edit && <EditUserModal u={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); flash.ok('Compte modifié.') }} />}
       {view && <UserDetailModal u={view} onClose={() => setView(null)} onStatus={(s) => { act(view.id, s); setView(null) }} />}
     </>
+  )
+}
+
+function AdminAccountsPanel() {
+  const { user } = useAuth()
+  const flash = useFlash()
+  const [admins, setAdmins] = useState<ApiUser[]>([])
+  const [loading, setLoading] = useState(apiEnabled)
+  const [error, setError] = useState('')
+  const [create, setCreate] = useState(false)
+  const [edit, setEdit] = useState<ApiUser | null>(null)
+
+  const refresh = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      setAdmins(await adminApi.users('?role=admin&per_page=100'))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible de charger les administrateurs.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (apiEnabled) void refresh()
+  }, [])
+
+  const remove = async (admin: ApiUser) => {
+    if (!(await ask({ message: `Supprimer le compte administrateur de ${admin.firstName} ${admin.lastName} ? Cette action est définitive.`, confirmLabel: 'Supprimer' }))) return
+    try {
+      await adminApi.deleteUser(admin.id)
+      flash.ok('Administrateur supprimé.')
+      await refresh()
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de supprimer cet administrateur.')
+    }
+  }
+
+  const setStatus = async (admin: ApiUser, status: ApiUser['status']) => {
+    try {
+      await adminApi.setUserStatus(admin.id, { status })
+      flash.ok(status === 'actif' ? 'Administrateur réactivé.' : 'Administrateur suspendu.')
+      await refresh()
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de modifier le statut.')
+    }
+  }
+
+  return (
+    <section className="mt-8 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="text-lg font-semibold">Administrateurs</h2><p className="text-sm text-muted">Gérez les comptes ayant accès à l’espace d’administration.</p></div>
+        {apiEnabled && <Button onClick={() => setCreate(true)}>Ajouter un administrateur</Button>}
+      </div>
+      {flash.node}
+      {!apiEnabled ? (
+        <Card className="p-4"><Notice tone="info">La gestion des administrateurs nécessite une connexion à l’API. Configurez VITE_API_URL pour créer et gérer des comptes persistants.</Notice></Card>
+      ) : error ? (
+        <Notice tone="danger">{error}</Notice>
+      ) : loading ? (
+        <Card className="p-6 text-center text-sm text-muted">Chargement des administrateurs…</Card>
+      ) : (
+        <DataTable rows={admins} rowKey={(admin) => String(admin.id)} empty={<EmptyState title="Aucun administrateur" />} columns={[
+          { header: 'Nom', cell: (admin) => <strong>{admin.firstName} {admin.lastName}</strong> },
+          { header: 'Téléphone', cell: (admin) => formatPhone(admin.phone) },
+          { header: 'E-mail', cell: (admin) => admin.email || '—' },
+          { header: 'Statut', cell: (admin) => <Badge tone={admin.status === 'actif' ? 'success' : 'danger'}>{admin.status === 'actif' ? 'Actif' : 'Suspendu'}</Badge> },
+          { header: 'Actions', cell: (admin) => {
+            const isSelf = String(admin.id) === user?.id
+            return <span className="flex flex-wrap justify-end gap-1.5">
+              <Button size="sm" variant="ghost" onClick={() => setEdit(admin)}>Modifier</Button>
+              {!isSelf && (admin.status === 'actif'
+                ? <Button size="sm" variant="outline" onClick={() => void setStatus(admin, 'suspendu')}>Suspendre</Button>
+                : <Button size="sm" onClick={() => void setStatus(admin, 'actif')}>Réactiver</Button>)}
+              {!isSelf && <Button size="sm" variant="ghost" onClick={() => void remove(admin)}>Supprimer</Button>}
+            </span>
+          } },
+        ]} />
+      )}
+      {create && <AdminAccountModal onClose={() => setCreate(false)} onDone={async () => { setCreate(false); flash.ok('Administrateur créé et activé. Communiquez-lui son mot de passe provisoire.'); await refresh() }} />}
+      {edit && <EditAdminAccountModal admin={edit} onClose={() => setEdit(null)} onDone={async () => { setEdit(null); flash.ok('Administrateur modifié.'); await refresh() }} />}
+    </section>
+  )
+}
+
+function AdminAccountModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', city: 'Cotonou', address: '', password: '' })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+    try {
+      await adminApi.createUser({ ...form, role: 'admin', userType: 'admin' })
+      onDone()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible de créer cet administrateur.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title="Ajouter un administrateur" onClose={onClose}>
+      <form onSubmit={save} className="space-y-3">
+        {error && <Notice tone="danger">{error}</Notice>}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Prénom" htmlFor="admin-first-name" required><Input id="admin-first-name" autoComplete="given-name" required maxLength={100} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Nom" htmlFor="admin-last-name" required><Input id="admin-last-name" autoComplete="family-name" required maxLength={100} value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
+        </div>
+        <Field label="Téléphone" htmlFor="admin-phone" required><Input id="admin-phone" type="tel" autoComplete="tel" required maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+        <Field label="E-mail" htmlFor="admin-email"><Input id="admin-email" type="email" autoComplete="email" maxLength={190} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ville" htmlFor="admin-city" required><select id="admin-city" className={sel} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}>{CITIES.map((city) => <option key={city.name}>{city.name}</option>)}</select></Field>
+          <Field label="Adresse" htmlFor="admin-address" required><Input id="admin-address" autoComplete="street-address" required maxLength={255} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
+        </div>
+        <Field label="Mot de passe provisoire" htmlFor="admin-password" required hint="8 caractères minimum."><Input id="admin-password" type="password" autoComplete="new-password" required minLength={8} maxLength={100} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+        <Button size="lg" className="w-full" type="submit" disabled={saving}>{saving ? 'Création…' : 'Créer l’administrateur'}</Button>
+      </form>
+    </Modal>
+  )
+}
+
+function EditAdminAccountModal({ admin, onClose, onDone }: { admin: ApiUser; onClose: () => void; onDone: () => void }) {
+  const [form, setForm] = useState({ firstName: admin.firstName, lastName: admin.lastName, email: admin.email ?? '', city: admin.city, address: admin.address })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+    try {
+      await adminApi.updateUser(admin.id, { ...form, userType: 'admin' })
+      onDone()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible de modifier cet administrateur.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title="Modifier l’administrateur" onClose={onClose}>
+      <form onSubmit={save} className="space-y-3">
+        {error && <Notice tone="danger">{error}</Notice>}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Prénom" htmlFor="edit-admin-first-name" required><Input id="edit-admin-first-name" required maxLength={100} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Nom" htmlFor="edit-admin-last-name" required><Input id="edit-admin-last-name" required maxLength={100} value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
+        </div>
+        <Field label="E-mail" htmlFor="edit-admin-email"><Input id="edit-admin-email" type="email" maxLength={190} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ville" htmlFor="edit-admin-city" required><select id="edit-admin-city" className={sel} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}>{CITIES.map((city) => <option key={city.name}>{city.name}</option>)}</select></Field>
+          <Field label="Adresse" htmlFor="edit-admin-address" required><Input id="edit-admin-address" required maxLength={255} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
+        </div>
+        <Button size="lg" className="w-full" type="submit" disabled={saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button>
+      </form>
+    </Modal>
   )
 }
 
