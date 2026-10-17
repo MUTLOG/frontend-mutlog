@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { SpaceConfig } from '@/routes/navigation'
 import { useAuth } from '@/features/auth/useAuth'
+import { useNotifications } from '@/features/notifications/useNotifications'
 import { userName } from '@/store/logic'
 import { useIdleLogout } from '@/hooks/useIdleLogout'
 
@@ -42,9 +43,9 @@ function SidebarNav({ space, onNavigate }: { space: SpaceConfig; onNavigate?: ()
  */
 export function DashboardShell({ space }: { space: SpaceConfig }) {
   const [open, setOpen] = useState(false)
-  const { user, db, logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const unread = db.notifications.filter((n) => n.userId === user?.id && !n.read).length
+  const { unread } = useNotifications()
   const roleLabel = { client: 'Client', transporteur: 'Transporteur', admin: 'Administrateur' }[space.key]
   const displayName = user ? userName(user) : ''
   useIdleLogout(30, () => { logout(); navigate('/connexion', { state: { expired: true } }) })

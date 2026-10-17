@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,7 @@ import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, PaymentBadge, Stars,
 import RouteMap from '@/features/maps/RouteMap'
 import { useAuth } from '@/features/auth/useAuth'
 import { apiEnabled } from '@/services/api'
-import { adminApi, type ContactMessage } from '@/services/mutlogApi'
+import { adminApi } from '@/services/mutlogApi'
 import { nextStatuses, STATUS_LABEL } from '@/domain/status'
 import type { Payment, Settings } from '@/domain/types'
 import { formatFCFA } from '@/lib/format'
@@ -134,57 +135,127 @@ export function AuditPage() {
     { header: 'Date', cell: (a) => fmtDateTime(a.createdAt) }, { header: 'Utilisateur', cell: (a) => userName(db.users.find((u) => u.id === a.actorId)) }, { header: 'Action', cell: (a) => a.action.replace(/_/g, ' ') }, { header: 'Détail', cell: (a) => a.detail }]} /></>)
 }
 
+
+
+type ContactStatus = 'nouveau' | 'lu' | 'traite'
+
+type ContactMessageRecord = {
+  id: number
+  name: string
+  phone: string | null
+  message: string
+  status: string
+  createdAt: string | null
+}
+
+const CONTACT_STATUS_LABEL: Record<string, string> = { nouveau: 'Nouveau', lu: 'Lu', traite: 'Traité' }
+const contactTone = (status: string) => (status === 'nouveau' ? 'pending' : status === 'traite' ? 'success' : 'neutral') as 'pending' | 'success' | 'neutral'
+
+/**
+ * Messages envoyés depuis le formulaire public. On y arrive depuis la notification
+ * (lien /admin/messages-contact?message=ID) : le message s'ouvre et passe à « Lu ».
+ */
 export function ContactMessagesPage() {
   const flash = useFlash()
-  const [messages, setMessages] = useState<ContactMessage[]>([])
-  const [loading, setLoading] = useState(true)
+  const [params, setParams] = useSearchParams()
+  const [messages, setMessages] = useState<ContactMessageRecord[]>([])
+  const [loading, setLoading] = useState(apiEnabled)
+  const [reloadKey, setReloadKey] = useState(0)
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [filter, setFilter] = useState<'tous' | ContactStatus>('tous')
+  const wanted = Number(params.get('message')) || null
+  const [selectedId, setSelectedId] = useState<number | null>(wanted)
+  const autoRead = useRef(new Set<number>())
 
   useEffect(() => {
+    if (!apiEnabled) return
     let active = true
-    if (!apiEnabled) {
-      setLoading(false)
-      return () => { active = false }
+    const load = (silent: boolean) =>
+      adminApi.contactMessages()
+        .then((result) => {
+          if (!active) return
+          const raw = result && typeof result === 'object' && 'data' in result
+            ? (result as { data: unknown }).data
+            : result
+          setMessages(Array.isArray(raw) ? raw as ContactMessageRecord[] : [])
+        })
+        .catch((cause: unknown) => {
+          if (active && !silent) flash.err(cause instanceof Error ? cause.message : 'Impossible de charger les messages de contact.')
+        })
+        .finally(() => { if (active) setLoading(false) })
+    void load(false)
+    // Un nouveau message apparaît sans recharger la page.
+    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') void load(true) }, 30_000)
+    return () => { active = false; clearInterval(timer) }
+  }, [reloadKey])
+
+  // Arrivée depuis une notification déjà sur la page : on ouvre le message demandé.
+  useEffect(() => { if (wanted) setSelectedId(wanted) }, [wanted])
+
+  const changeStatus = async (id: number, status: ContactStatus) => {
+    const previous = messages.find((m) => m.id === id)?.status
+    setMessages((list) => list.map((m) => (m.id === id ? { ...m, status } : m)))
+    try {
+      await adminApi.updateContactMessage(id, status)
+    } catch (cause) {
+      setMessages((list) => list.map((m) => (m.id === id && previous ? { ...m, status: previous } : m)))
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de mettre à jour le statut.')
     }
-    adminApi.contactMessages()
-      .then((result) => {
-        if (!active) return
-        setMessages(result)
-      })
-      .catch((cause) => {
-        if (active) flash.err(cause instanceof Error ? cause.message : 'Impossible de charger les messages de contact.')
-      })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [])
+  }
+
+  const select = (id: number) => {
+    setSelectedId(id)
+    setParams({ message: String(id) }, { replace: true })
+  }
+
+  const selected = messages.find((message) => message.id === selectedId)
+
+  // Ouvrir un message nouveau le marque comme lu (une seule tentative par message).
+  useEffect(() => {
+    if (!selected || selected.status !== 'nouveau' || autoRead.current.has(selected.id)) return
+    autoRead.current.add(selected.id)
+    void changeStatus(selected.id, 'lu')
+  }, [selected?.id, selected?.status])
 
   const normalizedQuery = query.trim().toLocaleLowerCase('fr')
   const filtered = messages.filter((message) =>
-    `${message.name} ${message.phone ?? ''} ${message.message} ${message.status}`.toLocaleLowerCase('fr').includes(normalizedQuery),
+    (filter === 'tous' || message.status === filter) &&
+    `${message.name} ${message.phone ?? ''} ${message.message}`.toLocaleLowerCase('fr').includes(normalizedQuery),
   )
-  const selected = messages.find((message) => message.id === selectedId)
+  const newCount = messages.filter((message) => message.status === 'nouveau').length
 
   return (
     <>
-      <PageHeader title="Messages de contact" description="Messages reçus depuis le formulaire public de MUTLOG." />
+      <PageHeader
+        title="Messages de contact"
+        description="Messages reçus depuis le formulaire public de MUTLOG."
+        action={apiEnabled ? <Button variant="outline" onClick={() => { setLoading(true); setReloadKey((k) => k + 1) }}>Actualiser</Button> : undefined}
+      />
       {flash.node}
       {!apiEnabled ? (
         <Card className="p-5"><h2 className="font-semibold">API non configurée</h2><p className="mt-2 text-sm text-muted">Configurez VITE_API_URL pour consulter ici les messages enregistrés par Laravel. Le mode démonstration transmet uniquement une notification locale.</p></Card>
       ) : (
         <div className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted">{loading ? 'Chargement des messages…' : `${filtered.length} message${filtered.length > 1 ? 's' : ''}`}</p>
-            <div className="w-full sm:max-w-sm"><Input aria-label="Rechercher un message" placeholder="Rechercher par nom, téléphone ou contenu…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+            <p className="text-sm text-muted">{loading ? 'Chargement des messages…' : `${filtered.length} message${filtered.length > 1 ? 's' : ''}${newCount ? ` · ${newCount} nouveau${newCount > 1 ? 'x' : ''}` : ''}`}</p>
+            <div className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row">
+              <select aria-label="Filtrer par statut" className={sel} value={filter} onChange={(e) => setFilter(e.target.value as 'tous' | ContactStatus)}>
+                <option value="tous">Tous les statuts</option>
+                <option value="nouveau">Nouveaux</option>
+                <option value="lu">Lus</option>
+                <option value="traite">Traités</option>
+              </select>
+              <div className="w-full"><Input aria-label="Rechercher un message" placeholder="Rechercher par nom, téléphone ou contenu…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+            </div>
           </div>
           {loading ? <Card className="p-8 text-center text-sm text-muted">Chargement des messages de contact…</Card> : filtered.length === 0 ? (
-            <EmptyState title={query ? 'Aucun résultat' : 'Aucun message reçu'} text={query ? 'Modifiez votre recherche.' : 'Les nouveaux messages envoyés depuis la page Contact apparaîtront ici.'} />
+            <EmptyState title={query || filter !== 'tous' ? 'Aucun résultat' : 'Aucun message reçu'} text={query || filter !== 'tous' ? 'Modifiez votre recherche ou le filtre.' : 'Les nouveaux messages envoyés depuis la page Contact apparaîtront ici.'} />
           ) : (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="space-y-3">
                 {filtered.map((message) => (
-                  <button key={message.id} type="button" onClick={() => setSelectedId(message.id)} className={`w-full rounded-card border p-4 text-left transition hover:border-primary ${selectedId === message.id ? 'border-primary bg-primary/5' : 'border-line bg-surface'}`}>
-                    <div className="flex items-start justify-between gap-3"><strong className="text-sm">{message.name}</strong><Badge tone={message.status === 'nouveau' ? 'pending' : 'neutral'}>{message.status || 'reçu'}</Badge></div>
+                  <button key={message.id} type="button" onClick={() => select(message.id)} className={`w-full rounded-card border p-4 text-left transition hover:border-primary ${selectedId === message.id ? 'border-primary bg-primary/5' : 'border-line bg-surface'}`}>
+                    <div className="flex items-start justify-between gap-3"><strong className="text-sm">{message.name}</strong><Badge tone={contactTone(message.status)}>{CONTACT_STATUS_LABEL[message.status] ?? message.status}</Badge></div>
                     <p className="mt-1 text-xs text-muted">{message.phone || 'Téléphone non renseigné'}{message.createdAt ? ` · ${fmtDateTime(message.createdAt)}` : ''}</p>
                     <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm text-ink">{message.message}</p>
                   </button>
@@ -192,10 +263,15 @@ export function ContactMessagesPage() {
               </div>
               <Card className="h-fit p-5">
                 {selected ? <>
-                  <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-muted">{selected.phone || 'Aucun numéro de téléphone'}</p></div><Badge tone={selected.status === 'nouveau' ? 'pending' : 'neutral'}>{selected.status || 'reçu'}</Badge></div>
+                  <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-muted">{selected.phone || 'Aucun numéro de téléphone'}</p></div><Badge tone={contactTone(selected.status)}>{CONTACT_STATUS_LABEL[selected.status] ?? selected.status}</Badge></div>
                   {selected.createdAt && <p className="mt-3 text-xs text-muted">Reçu le {fmtDateTime(selected.createdAt)}</p>}
-                  <div className="mt-5 whitespace-pre-wrap break-words rounded-control bg-canvas p-4 text-sm leading-6">{selected.message}</div>
-                  {selected.phone && <div className="mt-4"><Button onClick={() => window.open(`tel:${selected.phone}`, '_self')} variant="outline">Appeler le contact</Button></div>}
+                  <div className="mt-5 whitespace-pre-wrap break-words rounded-control bg-background p-4 text-sm leading-6">{selected.message}</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {selected.phone && <Button onClick={() => window.open(`tel:${selected.phone}`, '_self')} variant="outline">Appeler le contact</Button>}
+                    {selected.status === 'traite'
+                      ? <Button variant="ghost" onClick={() => void changeStatus(selected.id, 'lu')}>Rouvrir</Button>
+                      : <Button onClick={() => void changeStatus(selected.id, 'traite')}>Marquer comme traité</Button>}
+                  </div>
                 </> : <div className="py-10 text-center text-sm text-muted">Sélectionnez un message pour lire son contenu complet.</div>}
               </Card>
             </div>

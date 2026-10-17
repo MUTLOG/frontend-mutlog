@@ -1,6 +1,5 @@
 /** Couche d'accès centralisée aux routes décrites dans api-endpoints.md. */
 import { api, apiData } from './api'
-import type { ApiUser } from './api'
 
 export const authApi = {
   login: (phone: string, password: string) => api<{ user: import('./api').ApiUser; token: string }>('/auth/login', { method: 'POST', json: { phone, password } }),
@@ -14,7 +13,7 @@ export const authApi = {
 }
 
 export const contactApi = {
-  send: (input: { name: string; phone?: string; message: string }) =>
+  send: (input: { name: string; phone?: string; message: string; website?: string }) =>
     apiData<{ id: number; status: string }>('/contact-messages', {
       method: 'POST',
       json: input,
@@ -68,20 +67,10 @@ export const carrierApi = {
   createBreakdown: (input: Record<string, unknown>) => apiData<unknown>('/carrier/breakdowns', { method: 'POST', json: input }),
 }
 
-export type ContactMessage = {
-  id: number
-  name: string
-  phone: string | null
-  message: string
-  status: string
-  createdAt: string | null
-}
-
 export const adminApi = {
   dashboard: (query = '') => apiData<unknown>(`/admin/dashboard${query}`),
   stats: () => apiData<unknown>('/admin/stats'),
-  contactMessages: () => apiData<ContactMessage[]>('/admin/contact-messages'),
-  users: (query = '') => apiData<ApiUser[]>(`/admin/users${query}`),
+  users: (query = '') => apiData<unknown>(`/admin/users${query}`),
   user: (id: string | number) => apiData<unknown>(`/admin/users/${id}`),
   createUser: (input: Record<string, unknown>) => apiData<unknown>('/admin/users', { method: 'POST', json: input }),
   updateUser: (id: string | number, input: Record<string, unknown>) => apiData<unknown>(`/admin/users/${id}`, { method: 'PUT', json: input }),
@@ -106,6 +95,8 @@ export const adminApi = {
   settings: () => apiData<unknown>('/admin/settings'),
   updateSettings: (input: Record<string, unknown>) => apiData<unknown>('/admin/settings', { method: 'PUT', json: input }),
   audit: () => apiData<unknown>('/admin/audit'),
+  contactMessages: () => apiData<unknown>('/admin/contact-messages'),
+  updateContactMessage: (id: number | string, status: string) => apiData<unknown>(`/admin/contact-messages/${id}`, { method: 'PUT', json: { status } }),
   breakdowns: (filters: { status?: string; urgency?: string } = {}) => {
   const q = new URLSearchParams()
   if (filters.status) q.set('status', filters.status)

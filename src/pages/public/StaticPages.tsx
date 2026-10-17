@@ -312,6 +312,7 @@ export function ContactPage() {
     phone: '',
     subject: contactSubjects[0],
     message: '',
+    website: '', // champ piège anti-spam : jamais rempli par un humain
   })
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
@@ -335,11 +336,18 @@ export function ContactPage() {
       return
     }
 
+    // Site en production sans API : le message ne pourrait jamais atteindre l'administrateur.
+    // On le dit au visiteur plutôt que d'afficher un faux succès.
+    if (!apiEnabled && import.meta.env.PROD) {
+      setError('Le service de messagerie est momentanément indisponible. Merci de réessayer plus tard.')
+      return
+    }
+
     setBusy(true)
     try {
       const fullMessage = `Objet : ${form.subject}\n\n${message}`
       if (apiEnabled) {
-        await contactApi.send({ name, phone: form.phone.trim() || undefined, message: fullMessage })
+        await contactApi.send({ name, phone: form.phone.trim() || undefined, message: fullMessage, website: form.website })
       } else {
         // Mode démonstration conservé lorsque l’API n’est pas configurée.
         run((db) => {
@@ -390,7 +398,7 @@ export function ContactPage() {
                   variant="outline"
                   onClick={() => {
                     setSent(false)
-                    setForm({ name: '', phone: '', subject: contactSubjects[0], message: '' })
+                    setForm({ name: '', phone: '', subject: contactSubjects[0], message: '', website: '' })
                   }}
                 >
                   Envoyer un autre message
@@ -456,6 +464,18 @@ export function ContactPage() {
                     {form.message.length}/2000 caractères
                   </span>
                 </Field>
+
+                <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                  <label htmlFor="contact-website">Ne pas remplir ce champ</label>
+                  <input
+                    id="contact-website"
+                    name="website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={form.website}
+                    onChange={(e) => setForm({ ...form, website: e.target.value })}
+                  />
+                </div>
 
                 <Button type="submit" size="lg" disabled={busy} className="w-full sm:w-auto">
                   {busy ? 'Envoi…' : 'Envoyer le message'}

@@ -79,7 +79,7 @@ function AdminAccountsPanel() {
     setLoading(true)
     setError('')
     try {
-      setAdmins(await adminApi.users('?role=admin&per_page=100'))
+      setAdmins(await adminApi.users('?role=admin&per_page=100') as ApiUser[])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Impossible de charger les administrateurs.')
     } finally {

@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { DataTable, EmptyState, fmtDate, fmtDateTime, Stars, Tabs, useFlash, GOODS_LABEL } from '@/components/shared/ui-bits'
+import { DataTable, EmptyState, fmtDate, fmtDateTime, Notice, Stars, Tabs, useFlash, GOODS_LABEL } from '@/components/shared/ui-bits'
 import { StatusBadge } from '@/components/tracking/StatusBadge'
 import { useAuth } from '@/features/auth/useAuth'
+import { useNotifications } from '@/features/notifications/useNotifications'
 import { CITIES } from '@/domain/geo'
 import { formatFCFA } from '@/lib/format'
 import { avgRating, demoHash, userName } from '@/store/logic'
@@ -17,17 +18,15 @@ import { carrierTransports, clientTransports } from '@/store/selectors'
 import { run } from '@/store/store'
 
 export function NotificationsPage() {
-  const { db, user } = useAuth()
   const navigate = useNavigate()
-  const rows = db.notifications.filter((n) => n.userId === user!.id)
-  const unread = rows.filter((n) => !n.read).length
-  const markAll = () => run((d) => { d.notifications.filter((n) => n.userId === user!.id).forEach((n) => (n.read = true)); return { ok: true as const, value: undefined } })
-  const open = (id: string, link?: string) => { run((d) => { const n = d.notifications.find((x) => x.id === id); if (n) n.read = true; return { ok: true as const, value: undefined } }); if (link) navigate(link) }
+  const { items: rows, unread, loaded, error, markRead, markAll } = useNotifications()
+  const open = (id: string, link?: string) => { void markRead(id); if (link) navigate(link) }
   return (
     <>
-      <PageHeader title="Notifications" description={unread ? `${unread} non lue${unread > 1 ? 's' : ''}` : 'Vous êtes à jour.'} action={unread ? <Button variant="outline" onClick={markAll}>Tout marquer comme lu</Button> : undefined} />
+      <PageHeader title="Notifications" description={!loaded ? 'Chargement…' : unread ? `${unread} non lue${unread > 1 ? 's' : ''}` : 'Vous êtes à jour.'} action={unread ? <Button variant="outline" onClick={() => void markAll()}>Tout marquer comme lu</Button> : undefined} />
+      {error && <div className="mb-4"><Notice tone="danger">{error}</Notice></div>}
       <Card>
-        {rows.length === 0 ? <EmptyState title="Aucune notification" /> : (
+        {!loaded ? <div className="px-6 py-10 text-center text-sm text-muted">Chargement des notifications…</div> : rows.length === 0 ? <EmptyState title="Aucune notification" /> : (
           <ul className="divide-y divide-line">
             {rows.map((n) => (
               <li key={n.id}>
