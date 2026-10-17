@@ -11,10 +11,18 @@ import TransportDetailPage from '@/pages/public/TransportDetailPage'
 import DesignSystemPage from '@/pages/public/DesignSystemPage'
 import NotFoundPage from '@/pages/public/NotFoundPage'
 import { ForgotPasswordPage, LoginPage, RegisterPage } from '@/pages/public/AuthPages'
-import { AboutPage, ContactPage, HowItWorksPage, ServicesPage, TermsPage } from '@/pages/public/StaticPages'
+import { AboutPage, ContactPage, HowItWorksPage, ServicesPage } from '@/pages/public/StaticPages'
 import { EvaluationsPage, HistoryPage, MessagesPage, NotificationsPage, ProfilePage } from '@/pages/shared/SharedPages'
 const page = <T extends object>(load: () => Promise<T>, key: keyof T) =>
   lazy(() => load().then((m) => ({ default: m[key] as unknown as React.ComponentType })))
+
+// Pages légales : chargées à la demande pour garder le site public léger.
+const MentionsLegalesPage = page(() => import('@/pages/public/legal/MentionsLegalesPage'), 'default')
+const CguPage = page(() => import('@/pages/public/legal/CguPage'), 'default')
+const ConditionsCommercialesPage = page(() => import('@/pages/public/legal/ConditionsCommercialesPage'), 'default')
+const PolitiqueConfidentialitePage = page(() => import('@/pages/public/legal/PolitiqueConfidentialitePage'), 'default')
+const PolitiqueCookiesPage = page(() => import('@/pages/public/legal/PolitiqueCookiesPage'), 'default')
+const ChartePage = page(() => import('@/pages/public/legal/ChartePage'), 'default')
 
 // Chaque espace est chargé à la demande : le site public reste léger sur mobile.
 const ClientDashboard = page(() => import('@/pages/client/ClientDashboard'), 'default')
@@ -68,7 +76,13 @@ export default function App() {
         <Route path="services" element={<ServicesPage />} />
         <Route path="a-propos" element={<AboutPage />} />
         <Route path="contact" element={<ContactPage />} />
-        <Route path="conditions" element={<TermsPage />} />
+        <Route path="conditions" element={<Navigate to="/conditions-utilisation" replace />} />
+        <Route path="mentions-legales" element={<MentionsLegalesPage />} />
+        <Route path="conditions-utilisation" element={<CguPage />} />
+        <Route path="conditions-commerciales" element={<ConditionsCommercialesPage />} />
+        <Route path="politique-de-confidentialite" element={<PolitiqueConfidentialitePage />} />
+        <Route path="politique-cookies" element={<PolitiqueCookiesPage />} />
+        <Route path="charte" element={<ChartePage />} />
         <Route path="rechercher" element={<SearchPage />} />
         <Route path="transports/:id" element={<TransportDetailPage />} />
         <Route path="connexion" element={<LoginPage />} />
