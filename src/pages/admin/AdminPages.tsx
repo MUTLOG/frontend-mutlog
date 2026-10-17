@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,8 @@ import { ask } from '@/components/shared/confirm'
 import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, PaymentBadge, Stars, Tabs, useFlash } from '@/components/shared/ui-bits'
 import RouteMap from '@/features/maps/RouteMap'
 import { useAuth } from '@/features/auth/useAuth'
+import { apiEnabled } from '@/services/api'
+import { adminApi, type ContactMessage } from '@/services/mutlogApi'
 import { nextStatuses, STATUS_LABEL } from '@/domain/status'
 import type { Payment, Settings } from '@/domain/types'
 import { formatFCFA } from '@/lib/format'
@@ -132,32 +134,172 @@ export function AuditPage() {
     { header: 'Date', cell: (a) => fmtDateTime(a.createdAt) }, { header: 'Utilisateur', cell: (a) => userName(db.users.find((u) => u.id === a.actorId)) }, { header: 'Action', cell: (a) => a.action.replace(/_/g, ' ') }, { header: 'Détail', cell: (a) => a.detail }]} /></>)
 }
 
+export function ContactMessagesPage() {
+  const flash = useFlash()
+  const [messages, setMessages] = useState<ContactMessage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!apiEnabled) {
+      setLoading(false)
+      return () => { active = false }
+    }
+    adminApi.contactMessages()
+      .then((result) => {
+        if (!active) return
+        setMessages(result)
+      })
+      .catch((cause) => {
+        if (active) flash.err(cause instanceof Error ? cause.message : 'Impossible de charger les messages de contact.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const normalizedQuery = query.trim().toLocaleLowerCase('fr')
+  const filtered = messages.filter((message) =>
+    `${message.name} ${message.phone ?? ''} ${message.message} ${message.status}`.toLocaleLowerCase('fr').includes(normalizedQuery),
+  )
+  const selected = messages.find((message) => message.id === selectedId)
+
+  return (
+    <>
+      <PageHeader title="Messages de contact" description="Messages reçus depuis le formulaire public de MUTLOG." />
+      {flash.node}
+      {!apiEnabled ? (
+        <Card className="p-5"><h2 className="font-semibold">API non configurée</h2><p className="mt-2 text-sm text-muted">Configurez VITE_API_URL pour consulter ici les messages enregistrés par Laravel. Le mode démonstration transmet uniquement une notification locale.</p></Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted">{loading ? 'Chargement des messages…' : `${filtered.length} message${filtered.length > 1 ? 's' : ''}`}</p>
+            <div className="w-full sm:max-w-sm"><Input aria-label="Rechercher un message" placeholder="Rechercher par nom, téléphone ou contenu…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+          </div>
+          {loading ? <Card className="p-8 text-center text-sm text-muted">Chargement des messages de contact…</Card> : filtered.length === 0 ? (
+            <EmptyState title={query ? 'Aucun résultat' : 'Aucun message reçu'} text={query ? 'Modifiez votre recherche.' : 'Les nouveaux messages envoyés depuis la page Contact apparaîtront ici.'} />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="space-y-3">
+                {filtered.map((message) => (
+                  <button key={message.id} type="button" onClick={() => setSelectedId(message.id)} className={`w-full rounded-card border p-4 text-left transition hover:border-primary ${selectedId === message.id ? 'border-primary bg-primary/5' : 'border-line bg-surface'}`}>
+                    <div className="flex items-start justify-between gap-3"><strong className="text-sm">{message.name}</strong><Badge tone={message.status === 'nouveau' ? 'pending' : 'neutral'}>{message.status || 'reçu'}</Badge></div>
+                    <p className="mt-1 text-xs text-muted">{message.phone || 'Téléphone non renseigné'}{message.createdAt ? ` · ${fmtDateTime(message.createdAt)}` : ''}</p>
+                    <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm text-ink">{message.message}</p>
+                  </button>
+                ))}
+              </div>
+              <Card className="h-fit p-5">
+                {selected ? <>
+                  <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-muted">{selected.phone || 'Aucun numéro de téléphone'}</p></div><Badge tone={selected.status === 'nouveau' ? 'pending' : 'neutral'}>{selected.status || 'reçu'}</Badge></div>
+                  {selected.createdAt && <p className="mt-3 text-xs text-muted">Reçu le {fmtDateTime(selected.createdAt)}</p>}
+                  <div className="mt-5 whitespace-pre-wrap break-words rounded-control bg-canvas p-4 text-sm leading-6">{selected.message}</div>
+                  {selected.phone && <div className="mt-4"><Button onClick={() => window.open(`tel:${selected.phone}`, '_self')} variant="outline">Appeler le contact</Button></div>}
+                </> : <div className="py-10 text-center text-sm text-muted">Sélectionnez un message pour lire son contenu complet.</div>}
+              </Card>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 export function SettingsPage() {
   const { db } = useAuth()
   const flash = useFlash()
   const [s, setS] = useState<Settings>(db.settings)
-  const save = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(apiEnabled)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!apiEnabled) return
+    let active = true
+    adminApi.settings()
+      .then((result) => {
+        if (!active) return
+        const raw = result && typeof result === 'object' && 'data' in result
+          ? (result as { data: unknown }).data
+          : result
+        if (!raw || typeof raw !== 'object') return
+        const data = raw as Record<string, unknown>
+        setS((current) => ({
+          ...current,
+          commissionPct: Number(data.commissionPct ?? data.commission_pct ?? current.commissionPct),
+          commissionBearer: (data.commissionBearer ?? data.commission_bearer ?? current.commissionBearer) as Settings['commissionBearer'],
+          shareBasis: (data.shareBasis ?? data.share_basis ?? current.shareBasis) as Settings['shareBasis'],
+          cityRadiusKm: Number(data.cityRadiusKm ?? data.city_radius_km ?? current.cityRadiusKm),
+          dateToleranceDays: Number(data.dateToleranceDays ?? data.date_tolerance_days ?? current.dateToleranceDays),
+          paymentInstructions: String(data.paymentInstructions ?? data.payment_instructions ?? current.paymentInstructions),
+        }))
+      })
+      .catch((cause) => {
+        if (active) flash.err(cause instanceof Error ? cause.message : 'Impossible de charger les paramètres.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!(s.commissionPct >= 5 && s.commissionPct <= 10)) return flash.err('Le taux de commission doit être compris entre 5 % et 10 % (cahier des charges).')
-    if (!(s.cityRadiusKm >= 0 && s.dateToleranceDays >= 0)) return flash.err('Valeurs invalides.')
-    run((d) => { d.settings = s; L.log(d, d.session.userId ?? '', 'parametres_modifies', JSON.stringify(s)); return { ok: true as const, value: undefined } })
-    flash.ok('Paramètres enregistrés. Ils s\'appliquent aux nouveaux regroupements.')
+    if (!(s.cityRadiusKm >= 0 && s.cityRadiusKm <= 500)) return flash.err('Le rayon de matching doit être compris entre 0 et 500 km.')
+    if (!(Number.isInteger(s.dateToleranceDays) && s.dateToleranceDays >= 0 && s.dateToleranceDays <= 30)) return flash.err('La tolérance de date doit être un nombre entier entre 0 et 30 jours.')
+    if (!s.paymentInstructions.trim() || s.paymentInstructions.length > 500) return flash.err('Les consignes de paiement sont obligatoires et limitées à 500 caractères.')
+
+    setSaving(true)
+    try {
+      if (apiEnabled) {
+        const result = await adminApi.updateSettings({
+          commissionPct: s.commissionPct,
+          commissionBearer: s.commissionBearer,
+          shareBasis: s.shareBasis,
+          cityRadiusKm: s.cityRadiusKm,
+          dateToleranceDays: s.dateToleranceDays,
+          paymentInstructions: s.paymentInstructions.trim(),
+        })
+        const raw = result && typeof result === 'object' && 'data' in result
+          ? (result as { data: unknown }).data
+          : result
+        if (raw && typeof raw === 'object') {
+          const data = raw as Record<string, unknown>
+          setS((current) => ({
+            ...current,
+            commissionPct: Number(data.commissionPct ?? data.commission_pct ?? s.commissionPct),
+            commissionBearer: (data.commissionBearer ?? data.commission_bearer ?? s.commissionBearer) as Settings['commissionBearer'],
+            shareBasis: (data.shareBasis ?? data.share_basis ?? s.shareBasis) as Settings['shareBasis'],
+            cityRadiusKm: Number(data.cityRadiusKm ?? data.city_radius_km ?? s.cityRadiusKm),
+            dateToleranceDays: Number(data.dateToleranceDays ?? data.date_tolerance_days ?? s.dateToleranceDays),
+            paymentInstructions: String(data.paymentInstructions ?? data.payment_instructions ?? s.paymentInstructions),
+          }))
+        }
+      } else {
+        run((d) => { d.settings = s; L.log(d, d.session.userId ?? '', 'parametres_modifies', JSON.stringify(s)); return { ok: true as const, value: undefined } })
+      }
+      flash.ok('Paramètres enregistrés. Ils s’appliquent aux nouveaux regroupements.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible d’enregistrer les paramètres.')
+    } finally {
+      setSaving(false)
+    }
   }
   const num = (k: keyof Settings) => (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: Number(e.target.value) })
   return (
     <>
       <PageHeader title="Paramètres" description="Commission, répartition du prix et règles de matching." />
       <form onSubmit={save} noValidate className="max-w-2xl space-y-6">{flash.node}
+        {loading && <p className="text-sm text-muted">Chargement des paramètres depuis le serveur…</p>}
         <Card className="space-y-4 p-5">
           <h2 className="text-base font-semibold">Commission MUTLOG</h2>
-          <Field label="Taux (%)" htmlFor="c" hint="Entre 5 et 10 %."><Input id="c" type="number" step="0.5" min={5} max={10} value={s.commissionPct} onChange={num('commissionPct')} /></Field>
-          <Field label="Qui supporte la commission ?" htmlFor="b"><select id="b" className={sel + ' w-full'} value={s.commissionBearer} onChange={(e) => setS({ ...s, commissionBearer: e.target.value as Settings['commissionBearer'] })}><option value="transporteur">Le transporteur (déduite de son montant)</option><option value="clients">Les clients (ajoutée à leur part)</option></select></Field>
-          <Field label="Répartition du prix entre clients" htmlFor="r"><select id="r" className={sel + ' w-full'} value={s.shareBasis} onChange={(e) => setS({ ...s, shareBasis: e.target.value as Settings['shareBasis'] })}><option value="poids">Au prorata du poids</option><option value="volume">Au prorata du volume (si renseigné)</option></select></Field>
+          <Field label="Taux (%)" htmlFor="c" hint="Entre 5 et 10 %."><Input id="c" type="number" step="0.5" min={5} max={10} value={s.commissionPct} onChange={num('commissionPct')} disabled={loading || saving} /></Field>
+          <Field label="Qui supporte la commission ?" htmlFor="b"><select id="b" className={sel + ' w-full'} value={s.commissionBearer} disabled={loading || saving} onChange={(e) => setS({ ...s, commissionBearer: e.target.value as Settings['commissionBearer'] })}><option value="transporteur">Le transporteur (déduite de son montant)</option><option value="clients">Les clients (ajoutée à leur part)</option></select></Field>
+          <Field label="Répartition du prix entre clients" htmlFor="r"><select id="r" className={sel + ' w-full'} value={s.shareBasis} disabled={loading || saving} onChange={(e) => setS({ ...s, shareBasis: e.target.value as Settings['shareBasis'] })}><option value="poids">Au prorata du poids</option><option value="volume">Au prorata du volume (si renseigné)</option></select></Field>
         </Card>
         <Card className="space-y-4 p-5"><h2 className="text-base font-semibold">Matching</h2>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Rayon « départ compatible » (km)" htmlFor="k"><Input id="k" type="number" min={0} value={s.cityRadiusKm} onChange={num('cityRadiusKm')} /></Field><Field label="Tolérance de date (± jours)" htmlFor="j"><Input id="j" type="number" min={0} value={s.dateToleranceDays} onChange={num('dateToleranceDays')} /></Field></div></Card>
-        <Card className="space-y-3 p-5"><h2 className="text-base font-semibold">Paiement</h2><Field label="Consignes affichées au client" htmlFor="pi"><textarea id="pi" rows={3} className="w-full rounded-control border border-line p-3 text-sm" value={s.paymentInstructions} onChange={(e) => setS({ ...s, paymentInstructions: e.target.value })} /></Field></Card>
-        <div className="flex flex-wrap gap-3"><Button type="submit" size="lg">Enregistrer</Button><Button type="button" size="lg" variant="outline" onClick={async () => (await ask({ message: 'Remplacer toutes les données par le jeu de démonstration ?', confirmLabel: 'Réinitialiser' })) && resetDemo()}>Réinitialiser les données de démonstration</Button></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Rayon « départ compatible » (km)" htmlFor="k"><Input id="k" type="number" min={0} max={500} value={s.cityRadiusKm} onChange={num('cityRadiusKm')} disabled={loading || saving} /></Field><Field label="Tolérance de date (± jours)" htmlFor="j"><Input id="j" type="number" min={0} max={30} value={s.dateToleranceDays} onChange={num('dateToleranceDays')} disabled={loading || saving} /></Field></div></Card>
+        <Card className="space-y-3 p-5"><h2 className="text-base font-semibold">Paiement</h2><Field label="Consignes affichées au client" htmlFor="pi"><textarea id="pi" rows={3} maxLength={500} disabled={loading || saving} className="w-full rounded-control border border-line p-3 text-sm" value={s.paymentInstructions} onChange={(e) => setS({ ...s, paymentInstructions: e.target.value })} /></Field><p className="text-xs text-muted">{s.paymentInstructions.length}/500 caractères</p></Card>
+        <div className="flex flex-wrap gap-3"><Button type="submit" size="lg" disabled={loading || saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button><Button type="button" size="lg" variant="outline" onClick={async () => (await ask({ message: 'Remplacer toutes les données par le jeu de démonstration ?', confirmLabel: 'Réinitialiser' })) && resetDemo()}>Réinitialiser les données de démonstration</Button></div>
       </form>
     </>
   )

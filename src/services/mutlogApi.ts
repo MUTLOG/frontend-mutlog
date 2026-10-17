@@ -12,6 +12,14 @@ export const authApi = {
   changePassword: (currentPassword: string, password: string) => api('/me/password', { method: 'PUT', json: { currentPassword, password } }),
 }
 
+export const contactApi = {
+  send: (input: { name: string; phone?: string; message: string }) =>
+    apiData<{ id: number; status: string }>('/contact-messages', {
+      method: 'POST',
+      json: input,
+    }),
+}
+
 export const publicApi = {
   cities: () => apiData<Array<{ name: string; lat?: number; lng?: number; department?: string }>>('/cities'),
   settings: () => apiData<Record<string, unknown>>('/settings/public'),
@@ -59,9 +67,19 @@ export const carrierApi = {
   createBreakdown: (input: Record<string, unknown>) => apiData<unknown>('/carrier/breakdowns', { method: 'POST', json: input }),
 }
 
+export type ContactMessage = {
+  id: number
+  name: string
+  phone: string | null
+  message: string
+  status: string
+  createdAt: string | null
+}
+
 export const adminApi = {
   dashboard: (query = '') => apiData<unknown>(`/admin/dashboard${query}`),
   stats: () => apiData<unknown>('/admin/stats'),
+  contactMessages: () => apiData<ContactMessage[]>('/admin/contact-messages'),
   users: (query = '') => apiData<unknown>(`/admin/users${query}`),
   user: (id: string | number) => apiData<unknown>(`/admin/users/${id}`),
   createUser: (input: Record<string, unknown>) => apiData<unknown>('/admin/users', { method: 'POST', json: input }),

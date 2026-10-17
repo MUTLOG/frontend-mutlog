@@ -24,6 +24,8 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTitle } from '@/hooks/useTitle'
+import { apiEnabled } from '@/services/api'
+import { contactApi } from '@/services/mutlogApi'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
@@ -318,42 +320,46 @@ export function ContactPage() {
   const directEmail = isSet(LEGAL.contact.general) ? LEGAL.contact.general : isSet(LEGAL.editor.email) ? LEGAL.editor.email : ''
   const directPhone = isSet(LEGAL.contact.phone) ? LEGAL.contact.phone : isSet(LEGAL.editor.phone) ? LEGAL.editor.phone : ''
 
-  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
 
-    if (!form.name.trim() || !form.message.trim()) {
+    const name = form.name.trim()
+    const message = form.message.trim()
+    if (!name || !message) {
       setError('Renseignez votre nom et votre message.')
       return
     }
-
-    if (form.message.trim().length < 10) {
+    if (message.length < 10) {
       setError('Votre message doit contenir au moins 10 caractères.')
       return
     }
 
     setBusy(true)
-
     try {
-      run((db) => {
-        db.users
-          .filter((user) => user.role === 'admin')
-          .forEach((admin) =>
-            L.notify(
-              db,
-              admin.id,
-              'Message de contact',
-              `[${form.subject}] ${form.name} (${form.phone || 'sans téléphone'}) : ${form.message.slice(0, 120)}`,
-              '/admin/notifications',
-            ),
-          )
-
-        return { ok: true as const, value: undefined }
-      })
-
+      const fullMessage = `Objet : ${form.subject}\n\n${message}`
+      if (apiEnabled) {
+        await contactApi.send({ name, phone: form.phone.trim() || undefined, message: fullMessage })
+      } else {
+        // Mode démonstration conservé lorsque l’API n’est pas configurée.
+        run((db) => {
+          db.users
+            .filter((user) => user.role === 'admin')
+            .forEach((admin) =>
+              L.notify(
+                db,
+                admin.id,
+                'Message de contact',
+                `[${form.subject}] ${name} (${form.phone || 'sans téléphone'}) : ${message.slice(0, 120)}`,
+                '/admin/notifications',
+              ),
+            )
+          return { ok: true as const, value: undefined }
+        })
+      }
       setSent(true)
-    } catch {
-      setError('Le message n’a pas pu être enregistré. Réessayez.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Le message n’a pas pu être envoyé. Réessayez.')
     } finally {
       setBusy(false)
     }
@@ -378,7 +384,7 @@ export function ContactPage() {
             {sent ? (
               <div className="space-y-4">
                 <Notice tone="success">
-                  Votre message a été transmis à l’espace de notifications de l’équipe MUTLOG.
+                  Votre message a bien été transmis à l’équipe MUTLOG. Nous vous répondrons dès que possible.
                 </Notice>
                 <Button
                   variant="outline"

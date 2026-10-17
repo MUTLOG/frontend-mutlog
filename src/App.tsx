@@ -51,7 +51,7 @@ const AdminRequestsPage = page(() => import('@/pages/admin/AdminMatching'), 'Adm
 const MatchingPage = page(() => import('@/pages/admin/AdminMatching'), 'MatchingPage')
 const PoolingsPage = page(() => import('@/pages/admin/AdminMatching'), 'PoolingsPage')
 const AdminBreakdownReportsPage = page(() => import('@/pages/admin/AdminBreakdownReports'), 'AdminBreakdownReportsPage')
-//const ContactMessagesPage = page(() => import('@/pages/admin/AdminPages'), 'ContactMessagesPage')
+const ContactMessagesPage = page(() => import('@/pages/admin/AdminPages'), 'ContactMessagesPage')
 const CommissionsPage = page(() => import('@/pages/admin/AdminFinance'), 'CommissionsPage')
 const AdminOffersPage = page(() => import('@/pages/admin/AdminPages'), 'AdminOffersPage')
 const AdminPaymentsPage = page(() => import('@/pages/admin/AdminPages'), 'AdminPaymentsPage')
@@ -157,7 +157,7 @@ export default function App() {
           <Route path="commissions" element={<CommissionsPage />} />
           <Route path="evaluations" element={<AdminReviewsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
-          {/*<Route path="messages-contact" element={<ContactMessagesPage />} />*/}
+          <Route path="messages-contact" element={<ContactMessagesPage />} />
           <Route path="statistiques" element={<StatsPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="parametres" element={<SettingsPage />} />

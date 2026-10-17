@@ -9,7 +9,7 @@ export const LEGAL = {
   brand: 'MUTLOG',
   version: '1.0',
   lastUpdate: '17 octobre 2026',
-  domain: 'mutlog.shalomdigitalsolutions.com', // ex. : mutlog.bj
+  domain: 'https://mutlog.shalomdigitalsolutions.com', // ex. : mutlog.bj
 
   /** Éditeur et propriétaire de la plateforme */
   editor: {
