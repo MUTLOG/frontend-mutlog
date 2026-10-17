@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Clock3, MapPin } from 'lucide-react'
+import { Clock3, MapPin } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

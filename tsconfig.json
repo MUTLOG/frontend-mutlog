@@ -15,9 +15,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
-    "paths": { "@/*": ["src/*"] },
+    "paths": { "@/*": ["./src/*"] },
     "types": ["node", "google.maps"]
   },
   "include": ["src", "vite.config.ts", "tailwind.config.ts"]
