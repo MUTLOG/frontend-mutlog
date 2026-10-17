@@ -9,7 +9,7 @@ export const LEGAL = {
   brand: 'MUTLOG',
   version: '1.0',
   lastUpdate: '17 octobre 2026',
-  domain: TODO, // ex. : mutlog.bj
+  domain: 'mutlog.shalomdigitalsolutions.com', // ex. : mutlog.bj
 
   /** Éditeur et propriétaire de la plateforme */
   editor: {
@@ -17,10 +17,10 @@ export const LEGAL = {
     status: 'établissement',
     director: 'GUINI Lazare',
     directorTitle: 'Directeur général',
-    rccm: TODO,
-    ifu: TODO,
-    address: TODO,
-    phone: TODO,
+    rccm: 'RB/COT/26 A 115554',
+    ifu: '0202249016090',
+    address: 'Îlot : 705, Parcelle : D, Maison : GUINI , LITTORAL, COTONOU, 11EMEARRONDISSEMENT, GBEGAMEY AHITO',
+    phone: '+2290165296998',
     email: 'milalogistique@gmail.com',
     country: 'Bénin',
   },
@@ -50,17 +50,17 @@ export const LEGAL = {
   params: {
     commissionMin: 5, // cahier des charges : 5 % à 10 %
     commissionMax: 10,
-    payoutDelayDays: TODO, // délai de reversement au transporteur
-    cancelFreeHours: TODO, // annulation avec remboursement partiel (avant départ)
-    cancelFeePercent: TODO,
-    cancelLateHours: TODO, // annulation tardive : pas de remboursement
-    claimDelayHours: TODO, // délai de signalement d’un litige
+    payoutDelayDays: 3, // délai de reversement au transporteur
+    cancelFreeHours: 4, // annulation avec remboursement partiel (avant départ)
+    cancelFeePercent: 2,
+    cancelLateHours: 1, // annulation tardive : pas de remboursement
+    claimDelayHours: 72, // délai de signalement d’un litige
     amicableDays: 30,
     rightsReplyDays: 30,
-    accountRetentionYears: TODO, // après fermeture du compte
+    accountRetentionYears: 1, // après fermeture du compte
     accountingRetentionYears: 10, // opérations, paiements, reçus
     logsRetentionMonths: 12,
-    attachmentsRetentionMonths: TODO,
+    attachmentsRetentionMonths: 3,
   },
 }
 
