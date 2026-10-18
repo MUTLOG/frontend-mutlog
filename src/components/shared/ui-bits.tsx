@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import type { GoodsType, Offer, PaymentStatus, TransportRequest } from '@/domain/types'
+import type { GoodsType, Offer, PaymentStatus, Reservation, TransportRequest } from '@/domain/types'
+import type { OperationStatus } from '@/types/operation'
 import type { Db } from '@/store/db'
 import { findMatches } from '@/domain/matching'
 
@@ -31,21 +32,41 @@ const PAY: Record<PaymentStatus, { label: string; tone: React.ComponentProps<typ
 }
 export const PaymentBadge = ({ status }: { status: PaymentStatus }) => <Badge tone={PAY[status].tone}>{PAY[status].label}</Badge>
 
-/** Badge d'une demande : « En attente », « Propositions (n) », « Confirmé »… (maquette). */
-export function RequestBadge({ db, r }: { db: Db; r: TransportRequest }) {
-  if (r.status === 'recherche') {
-    const n = findMatches(r, db.offers, db.settings, (id) => db.users.find((u) => u.id === id)?.status === 'actif').length
-    return n > 0 ? <Badge tone="info">Propositions ({n})</Badge> : <Badge tone="pending">En attente</Badge>
+/**
+ * Badge d'un statut de demande : « En attente », « Propositions (n) », « Confirmé »…
+ * `matchCount` (si connu, ex. fiche détaillée) affiche « Propositions (n) » pendant la recherche ;
+ * sinon la liste affiche simplement « En recherche » (le serveur ne renvoie pas ce compteur dans les listes).
+ */
+export function RequestStatusBadge({ status, matchCount }: { status: OperationStatus; matchCount?: number }) {
+  if (status === 'recherche') {
+    if (matchCount === undefined) return <Badge tone="pending">En recherche</Badge>
+    return matchCount > 0 ? <Badge tone="info">Propositions ({matchCount})</Badge> : <Badge tone="pending">En attente</Badge>
   }
-  if (r.status === 'mutualisation') return <Badge tone="info">Mutualisation en cours</Badge>
-  if (r.status === 'confirmee') return <Badge tone="success">Confirmé</Badge>
-  if (r.status === 'en_cours') return <Badge tone="info">En transit</Badge>
-  if (r.status === 'arrive_destination') return <Badge tone="info">Arrivé</Badge>
-  if (r.status === 'livree') return <Badge tone="success">Livré</Badge>
-  if (r.status === 'terminee') return <Badge tone="success">Terminé</Badge>
-  if (r.status === 'annule') return <Badge tone="danger">Annulé</Badge>
+  if (status === 'mutualisation') return <Badge tone="info">Mutualisation en cours</Badge>
+  if (status === 'confirmee') return <Badge tone="success">Confirmé</Badge>
+  if (status === 'en_cours') return <Badge tone="info">En transit</Badge>
+  if (status === 'arrive_destination') return <Badge tone="info">Arrivé</Badge>
+  if (status === 'livree') return <Badge tone="success">Livré</Badge>
+  if (status === 'terminee') return <Badge tone="success">Terminé</Badge>
+  if (status === 'annule') return <Badge tone="danger">Annulé</Badge>
   return <Badge tone="pending">En attente</Badge>
 }
+
+/** @deprecated Version « démo » (base locale), encore utilisée par la page admin Demo : à supprimer avec elle. */
+export function RequestBadge({ db, r }: { db: Db; r: TransportRequest }) {
+  const n = r.status === 'recherche'
+    ? findMatches(r, db.offers, db.settings, (id) => db.users.find((u) => u.id === id)?.status === 'actif').length
+    : undefined
+  return <RequestStatusBadge status={r.status} matchCount={n} />
+}
+
+const RESERVATION: Record<Reservation['status'], { label: string; tone: React.ComponentProps<typeof Badge>['tone'] }> = {
+  en_attente: { label: 'En attente', tone: 'pending' },
+  confirmee: { label: 'Confirmée', tone: 'success' },
+  refusee: { label: 'Refusée', tone: 'danger' },
+  annulee: { label: 'Annulée', tone: 'danger' },
+}
+export const ReservationBadge = ({ status }: { status: Reservation['status'] }) => <Badge tone={RESERVATION[status].tone}>{RESERVATION[status].label}</Badge>
 
 export function Stars({ value, size = 16 }: { value: number; size?: number }) {
   return (

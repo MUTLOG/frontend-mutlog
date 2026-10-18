@@ -9,11 +9,11 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { StatusBadge } from '@/components/tracking/StatusBadge'
 import { StatusStepper } from '@/components/tracking/StatusStepper'
 import { ask } from '@/components/shared/confirm'
-import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, PaymentBadge, Stars, Tabs, useFlash } from '@/components/shared/ui-bits'
+import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, Notice, PaymentBadge, Stars, Tabs, useFlash } from '@/components/shared/ui-bits'
 import RouteMap from '@/features/maps/RouteMap'
 import { useAuth } from '@/features/auth/useAuth'
-import { apiEnabled } from '@/services/api'
-import { adminApi } from '@/services/mutlogApi'
+import { adminApiMode } from '@/services/api'
+import { adminApi, sharedApi, type AdminAuditRecord, type AdminPayment, type AdminReview, type AdminTransport, type RemoteOffer } from '@/services/mutlogApi'
 import { nextStatuses, STATUS_LABEL } from '@/domain/status'
 import type { Payment, Settings } from '@/domain/types'
 import { formatFCFA } from '@/lib/format'
@@ -22,22 +22,46 @@ import * as L from '@/store/logic'
 import { transportViews } from '@/store/selectors'
 import { resetDemo, run } from '@/store/store'
 import type { OperationStatus } from '@/types/operation'
+import { useAdminResource } from './useAdminResource'
 
 const sel = 'h-10 rounded-control border border-line bg-surface px-3 text-sm text-ink'
+const DEFAULT_SETTINGS: Settings = {
+  commissionPct: 10, commissionBearer: 'transporteur', shareBasis: 'poids', cityRadiusKm: 25,
+  dateToleranceDays: 2, paymentInstructions: '',
+}
 
 export function AdminOffersPage() {
   const { db, user } = useAuth()
   const flash = useFlash()
-  const rows = [...db.offers].sort((a, b) => b.date.localeCompare(a.date))
+  const remote = useAdminResource(adminApi.offers, [] as RemoteOffer[])
+  const rows = adminApiMode
+    ? remote.data.map((o) => ({ id: String(o.id), from: o.from, to: o.to, transporter: o.transporter?.displayName || `${o.transporter?.firstName ?? ''} ${o.transporter?.lastName ?? ''}`.trim() || '—', date: o.date, availableT: o.availableT, totalCapacityT: o.totalCapacityT, price: o.price, pricingMode: o.pricingMode, status: o.status }))
+    : db.offers.map((o) => ({ ...o, transporter: userName(db.users.find((u) => u.id === o.transporterId)) }))
+  const cancel = async (id: string) => {
+    try {
+      if (adminApiMode) {
+        await adminApi.cancelOffer(id)
+        remote.reload()
+      } else {
+        const result = run((d) => L.cancelOffer(d, user!.id, id))
+        if (!result.ok) return flash.err(result.error)
+      }
+      flash.ok('Offre annulée.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible d’annuler cette offre.')
+    }
+  }
   return (
     <>
       <PageHeader title="Offres de transport" />{flash.node}
+      {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+      {remote.loading && adminApiMode && <Card className="p-6 text-center text-sm text-muted">Chargement des offres…</Card>}
       <DataTable rows={rows} rowKey={(o) => o.id} columns={[
-        { header: 'Trajet', cell: (o) => <strong>{o.from} → {o.to}</strong> }, { header: 'Transporteur', cell: (o) => userName(db.users.find((u) => u.id === o.transporterId)) },
+        { header: 'Trajet', cell: (o) => <strong>{o.from} → {o.to}</strong> }, { header: 'Transporteur', cell: (o) => o.transporter },
         { header: 'Départ', cell: (o) => fmtDate(o.date) }, { header: 'Disponible', cell: (o) => `${o.availableT} / ${o.totalCapacityT} t` },
         { header: 'Tarif', cell: (o) => `${o.price.toLocaleString('fr-FR')} FCFA${o.pricingMode === 'tonne' ? '/t' : ' (forfait)'}` },
         { header: 'Statut', cell: (o) => <Badge tone={o.status === 'ouverte' ? 'success' : o.status === 'annulee' ? 'danger' : 'neutral'}>{o.status}</Badge> },
-        { header: '', cell: (o) => o.status === 'ouverte' ? <Button size="sm" variant="ghost" onClick={async () => { if (await ask({ message: 'Annuler cette offre ?', confirmLabel: 'Annuler l\'offre' })) { const r = run((d) => L.cancelOffer(d, user!.id, o.id)); r.ok ? flash.ok('Offre annulée.') : flash.err(r.error) } }}>Annuler</Button> : null },
+        { header: '', cell: (o) => o.status === 'ouverte' ? <Button size="sm" variant="ghost" onClick={async () => { if (await ask({ message: 'Annuler cette offre ?', confirmLabel: 'Annuler l\'offre' })) await cancel(o.id) }}>Annuler</Button> : null },
       ]} />
     </>
   )
@@ -45,37 +69,65 @@ export function AdminOffersPage() {
 
 export function AdminReservationsPage() {
   const { db } = useAuth()
-  const rows = [...db.reservations].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const remote = useAdminResource(adminApi.reservations, [] as Awaited<ReturnType<typeof adminApi.reservations>>)
+  const rows = adminApiMode
+    ? remote.data.map((r) => ({ id: String(r.id), from: r.offer ? `${r.offer.from} → ${r.offer.to}` : '—', client: r.request?.client?.displayName ?? '—', transporter: r.offer?.transporter?.displayName ?? '—', weightT: r.weightT, status: r.status }))
+    : [...db.reservations].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((r) => {
+      const offer = db.offers.find((x) => x.id === r.offerId)
+      return { id: r.id, from: offer ? `${offer.from} → ${offer.to}` : '—', client: userName(db.users.find((u) => u.id === r.clientId)), transporter: userName(db.users.find((u) => u.id === r.transporterId)), weightT: r.weightT, status: r.status }
+    })
   return (<><PageHeader title="Réservations" /><DataTable rows={rows} rowKey={(r) => r.id} empty={<EmptyState title="Aucune réservation" />} columns={[
-    { header: 'Trajet', cell: (r) => { const o = db.offers.find((x) => x.id === r.offerId); return <strong>{o?.from} → {o?.to}</strong> } }, { header: 'Client', cell: (r) => userName(db.users.find((u) => u.id === r.clientId)) },
-    { header: 'Transporteur', cell: (r) => userName(db.users.find((u) => u.id === r.transporterId)) }, { header: 'Poids', cell: (r) => fmtT(r.weightT) },
+    { header: 'Trajet', cell: (r) => <strong>{r.from}</strong> }, { header: 'Client', cell: (r) => r.client },
+    { header: 'Transporteur', cell: (r) => r.transporter }, { header: 'Poids', cell: (r) => fmtT(r.weightT) },
     { header: 'Statut', cell: (r) => <Badge tone={r.status === 'confirmee' ? 'success' : r.status === 'en_attente' ? 'pending' : 'danger'}>{r.status.replace('_', ' ')}</Badge> }]} /></>)
 }
 
 export function OperationsPage() {
   const { db } = useAuth()
-  const rows = transportViews(db).sort((a, b) => b.t.ref.localeCompare(a.t.ref))
-  return (<><PageHeader title="Opérations" description="Toutes les opérations de transport (identifiant unique MUT-AAAA-NNNNNN)." /><DataTable rows={rows} rowKey={(v) => v.t.id} empty={<EmptyState title="Aucune opération" />} columns={[
-    { header: 'Opération', cell: (v) => <strong>{v.t.ref}</strong> }, { header: 'Trajet', cell: (v) => `${v.offer.from} → ${v.offer.to}` }, { header: 'Transporteur', cell: (v) => userName(db.users.find((u) => u.id === v.offer.transporterId)) },
-    { header: 'Clients', cell: (v) => v.p.shares.length }, { header: 'Montant', cell: (v) => formatFCFA(v.p.finance.gross) }, { header: 'Statut', cell: (v) => <StatusBadge status={v.t.status} /> }]} /></>)
+  const remote = useAdminResource(() => adminApi.transports('?per_page=100'), [] as AdminTransport[])
+  const rows = adminApiMode
+    ? remote.data.map((t) => ({ id: String(t.id), ref: t.ref, from: t.offer.from, to: t.offer.to, transporter: t.offer.transporter?.displayName ?? '—', clients: t.clients?.length ?? 0, gross: t.finance?.gross ?? 0, status: t.status as OperationStatus }))
+    : transportViews(db).map((v) => ({ id: v.t.id, ref: v.t.ref, from: v.offer.from, to: v.offer.to, transporter: userName(db.users.find((u) => u.id === v.offer.transporterId)), clients: v.p.shares.length, gross: v.p.finance.gross, status: v.t.status })).sort((a, b) => b.ref.localeCompare(a.ref))
+  return (<><PageHeader title="Opérations" description="Toutes les opérations de transport (identifiant unique MUT-AAAA-NNNNNN)." /><DataTable rows={rows} rowKey={(v) => v.id} empty={<EmptyState title="Aucune opération" />} columns={[
+    { header: 'Opération', cell: (v) => <strong>{v.ref}</strong> }, { header: 'Trajet', cell: (v) => `${v.from} → ${v.to}` }, { header: 'Transporteur', cell: (v) => v.transporter },
+    { header: 'Clients', cell: (v) => v.clients }, { header: 'Montant', cell: (v) => formatFCFA(v.gross) }, { header: 'Statut', cell: (v) => <StatusBadge status={v.status} /> }]} /></>)
 }
 
 export function TrackingPage() {
   const { db, user } = useAuth()
   const flash = useFlash()
-  const active = transportViews(db).filter((v) => !['terminee', 'annule'].includes(v.t.status))
-  const [id, setId] = useState(active[0]?.t.id ?? '')
-  const v = transportViews(db).find((x) => x.t.id === id)
-  const move = (to: OperationStatus) => { const r = run((d) => L.advanceTransport(d, user!.id, id, to)); r.ok ? flash.ok('Statut mis à jour.') : flash.err(r.error) }
+  const remote = useAdminResource(() => adminApi.transports('?status=confirmee,en_cours,arrive_destination,livree'), [] as AdminTransport[])
+  const active = adminApiMode
+    ? remote.data.map((t) => ({ id: String(t.id), ref: t.ref, from: t.offer.from, to: t.offer.to, status: t.status as OperationStatus, events: t.events }))
+    : transportViews(db).filter((v) => !['terminee', 'annule'].includes(v.t.status)).map((v) => ({ id: v.t.id, ref: v.t.ref, from: v.offer.from, to: v.offer.to, status: v.t.status, events: v.t.events }))
+  const [id, setId] = useState(active[0]?.id ?? '')
+  useEffect(() => { if (active.length && !active.some((transport) => transport.id === id)) setId(active[0].id) }, [active, id])
+  const v = active.find((x) => x.id === id)
+  const move = async (to: OperationStatus) => {
+    try {
+      if (adminApiMode) {
+        await sharedApi.updateTransportStatus(id, to)
+        remote.reload()
+      } else {
+        const result = run((d) => L.advanceTransport(d, user!.id, id, to))
+        if (!result.ok) return flash.err(result.error)
+      }
+      flash.ok('Statut mis à jour.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de mettre à jour le statut.')
+    }
+  }
   return (
     <>
       <PageHeader title="Suivi des transports" description="Itinéraire, positions et statut de chaque opération." />{flash.node}
+      {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+      {remote.loading && adminApiMode && <Card className="p-6 text-center text-sm text-muted">Chargement des transports…</Card>}
       {active.length === 0 ? <Card><EmptyState title="Aucun transport en cours" /></Card> : (
         <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-          <Card><ul className="divide-y divide-line">{active.map((x) => <li key={x.t.id}><button onClick={() => setId(x.t.id)} className={`w-full px-4 py-3 text-left text-sm hover:bg-background/70 ${x.t.id === id ? 'bg-primary-soft' : ''}`}><strong>{x.offer.from} → {x.offer.to}</strong><br /><span className="text-xs text-muted">{x.t.ref} · {STATUS_LABEL[x.t.status]}</span></button></li>)}</ul></Card>
-          {v && <Card className="space-y-4 p-4"><StatusStepper status={v.t.status} />
-            <RouteMap from={v.offer.from} to={v.offer.to} height={320} trace={v.t.events.filter((e) => e.kind === 'position' && e.lat !== undefined).map((e) => ({ lat: e.lat!, lng: e.lng!, label: `${e.label} — ${fmtDateTime(e.at)}` }))} />
-            <div className="flex flex-wrap gap-2">{nextStatuses(v.t.status).map((s) => <Button key={s} size="sm" variant={s === 'annule' ? 'outline' : 'primary'} onClick={() => move(s)}>{s === 'annule' ? 'Annuler le transport' : `Passer à « ${STATUS_LABEL[s]} »`}</Button>)}</div></Card>}
+          <Card><ul className="divide-y divide-line">{active.map((x) => <li key={x.id}><button onClick={() => setId(x.id)} className={`w-full px-4 py-3 text-left text-sm hover:bg-background/70 ${x.id === id ? 'bg-primary-soft' : ''}`}><strong>{x.from} → {x.to}</strong><br /><span className="text-xs text-muted">{x.ref} · {STATUS_LABEL[x.status]}</span></button></li>)}</ul></Card>
+          {v && <Card className="space-y-4 p-4"><StatusStepper status={v.status} />
+            <RouteMap from={v.from} to={v.to} height={320} trace={v.events.filter((e) => e.kind === 'position' && e.lat !== undefined && e.lng !== undefined).map((e) => ({ lat: e.lat!, lng: e.lng!, label: `${e.label} — ${fmtDateTime(e.at)}` }))} />
+            <div className="flex flex-wrap gap-2">{nextStatuses(v.status).map((s) => <Button key={s} size="sm" variant={s === 'annule' ? 'outline' : 'primary'} onClick={() => void move(s)}>{s === 'annule' ? 'Annuler le transport' : `Passer à « ${STATUS_LABEL[s]} »`}</Button>)}</div></Card>}
         </div>)}
     </>
   )
@@ -85,31 +137,90 @@ export function AdminPaymentsPage() {
   const { db, user } = useAuth()
   const flash = useFlash()
   const [f, setF] = useState<'a_verifier' | 'tous'>('a_verifier')
-  const rows = db.payments.filter((p) => f === 'tous' || (p.status === 'en_attente' && p.reference)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  const set = (id: string, s: Payment['status']) => { const r = run((d) => L.setPaymentStatus(d, user!.id, id, s)); r.ok ? flash.ok('Paiement mis à jour.') : flash.err(r.error) }
+  const remote = useAdminResource(() => sharedApi.payments('?per_page=100'), [] as AdminPayment[])
+  const rows = adminApiMode
+    ? remote.data.filter((p) => f === 'tous' || (p.status === 'en_attente' && p.reference)).map((p) => ({ id: String(p.id), transport: p.transportRef ?? '—', client: p.clientName ?? '—', amount: p.amount, reference: p.reference ?? null, status: p.status }))
+    : db.payments.filter((p) => f === 'tous' || (p.status === 'en_attente' && p.reference)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((p) => ({ id: p.id, transport: db.transports.find((t) => t.id === p.transportId)?.ref ?? '—', client: userName(db.users.find((u) => u.id === p.clientId)), amount: p.amount, reference: p.reference ?? null, status: p.status }))
+  const reviewCount = adminApiMode ? remote.data.filter((p) => p.status === 'en_attente' && p.reference).length : db.payments.filter((p) => p.status === 'en_attente' && p.reference).length
+  const set = async (id: string, s: Payment['status']) => {
+    try {
+      if (adminApiMode) {
+        await adminApi.setPaymentStatus(id, { status: s })
+        remote.reload()
+      } else {
+        const result = run((d) => L.setPaymentStatus(d, user!.id, id, s))
+        if (!result.ok) return flash.err(result.error)
+      }
+      flash.ok('Paiement mis à jour.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de mettre à jour le paiement.')
+    }
+  }
   return (
     <>
       <PageHeader title="Paiements" description="Validation manuelle des paiements Mobile Money déclarés par les clients." />{flash.node}
-      <Tabs value={f} onChange={setF} tabs={[{ key: 'a_verifier', label: 'À vérifier', count: db.payments.filter((p) => p.status === 'en_attente' && p.reference).length }, { key: 'tous', label: 'Tous', count: db.payments.length }]} />
+      {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+      {remote.loading && adminApiMode && <Card className="p-6 text-center text-sm text-muted">Chargement des paiements…</Card>}
+      <Tabs value={f} onChange={setF} tabs={[{ key: 'a_verifier', label: 'À vérifier', count: reviewCount }, { key: 'tous', label: 'Tous', count: adminApiMode ? remote.data.length : db.payments.length }]} />
       <DataTable rows={rows} rowKey={(p) => p.id} empty={<EmptyState title="Aucun paiement à vérifier" />} columns={[
-        { header: 'Opération', cell: (p) => db.transports.find((t) => t.id === p.transportId)?.ref }, { header: 'Client', cell: (p) => userName(db.users.find((u) => u.id === p.clientId)) },
+        { header: 'Opération', cell: (p) => p.transport }, { header: 'Client', cell: (p) => p.client },
         { header: 'Montant', cell: (p) => <strong>{formatFCFA(p.amount)}</strong> }, { header: 'Référence', cell: (p) => p.reference ?? '—' }, { header: 'Statut', cell: (p) => <PaymentBadge status={p.status} /> },
-        { header: 'Actions', cell: (p) => <span className="flex flex-wrap justify-end gap-1.5">{p.status === 'en_attente' && p.reference && <><Button size="sm" onClick={() => set(p.id, 'confirme')}>Confirmer</Button><Button size="sm" variant="outline" onClick={() => set(p.id, 'echoue')}>Échoué</Button></>}{p.status === 'confirme' && <Button size="sm" variant="ghost" onClick={async () => (await ask({ message: 'Marquer ce paiement comme remboursé ?', confirmLabel: 'Rembourser', danger: false })) && set(p.id, 'rembourse')}>Rembourser</Button>}</span> }]} />
+        { header: 'Actions', cell: (p) => <span className="flex flex-wrap justify-end gap-1.5">{p.status === 'en_attente' && p.reference && <><Button size="sm" onClick={() => void set(p.id, 'confirme')}>Confirmer</Button><Button size="sm" variant="outline" onClick={() => void set(p.id, 'echoue')}>Échoué</Button></>}{p.status === 'confirme' && <Button size="sm" variant="ghost" onClick={async () => (await ask({ message: 'Marquer ce paiement comme remboursé ?', confirmLabel: 'Rembourser', danger: false })) && set(p.id, 'rembourse')}>Rembourser</Button>}</span> }]} />
     </>
   )
 }
 
 export function AdminReviewsPage() {
   const { db, user } = useAuth()
-  const rows = [...db.reviews].sort((a, b) => Number(b.reported) - Number(a.reported) || b.createdAt.localeCompare(a.createdAt))
-  const remove = async (id: string) => { if (!(await ask({ message: 'Supprimer cet avis ?', confirmLabel: 'Supprimer' }))) return; run((d) => { d.reviews = d.reviews.filter((r) => r.id !== id); L.log(d, user!.id, 'avis_supprime', id); return { ok: true as const, value: undefined } }) }
+  const flash = useFlash()
+  const remote = useAdminResource(sharedApi.reviews, [] as AdminReview[])
+  const rows = adminApiMode
+    ? remote.data.map((r) => ({ id: String(r.id), rating: r.rating, from: r.author?.displayName ?? r.author?.firstName ?? '—', to: r.target?.displayName ?? r.target?.firstName ?? '—', comment: r.comment, reported: r.reported }))
+    : [...db.reviews].sort((a, b) => Number(b.reported) - Number(a.reported) || b.createdAt.localeCompare(a.createdAt)).map((r) => ({ id: r.id, rating: r.rating, from: userName(db.users.find((u) => u.id === r.fromId)), to: userName(db.users.find((u) => u.id === r.toId)), comment: r.comment, reported: r.reported }))
+  const remove = async (id: string) => {
+    if (!(await ask({ message: 'Supprimer cet avis ?', confirmLabel: 'Supprimer' }))) return
+    try {
+      if (adminApiMode) {
+        await adminApi.deleteReview(id)
+        remote.reload()
+      } else {
+        run((d) => { d.reviews = d.reviews.filter((r) => r.id !== id); L.log(d, user!.id, 'avis_supprime', id); return { ok: true as const, value: undefined } })
+      }
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de supprimer cet avis.')
+    }
+  }
   return (<><PageHeader title="Évaluations" /><DataTable rows={rows} rowKey={(r) => r.id} empty={<EmptyState title="Aucune évaluation" />} columns={[
-    { header: 'Note', cell: (r) => <Stars value={r.rating} size={14} /> }, { header: 'De', cell: (r) => userName(db.users.find((u) => u.id === r.fromId)) }, { header: 'Pour', cell: (r) => userName(db.users.find((u) => u.id === r.toId)) },
-    { header: 'Commentaire', cell: (r) => r.comment ?? '—' }, { header: 'Signalement', cell: (r) => r.reported ? <Badge tone="danger">Signalé</Badge> : '—' }, { header: '', cell: (r) => <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>Supprimer</Button> }]} /></>)
+    { header: 'Note', cell: (r) => <Stars value={r.rating} size={14} /> }, { header: 'De', cell: (r) => r.from }, { header: 'Pour', cell: (r) => r.to },
+    { header: 'Commentaire', cell: (r) => r.comment ?? '—' }, { header: 'Signalement', cell: (r) => r.reported ? <Badge tone="danger">Signalé</Badge> : '—' }, { header: '', cell: (r) => <Button size="sm" variant="ghost" onClick={() => void remove(r.id)}>Supprimer</Button> }]} /></>)
 }
 
 export function StatsPage() {
   const { db } = useAuth()
+  const remote = useAdminResource(adminApi.stats, { done: 0, poolingsMulti: 0, avgRating: null, topRoutes: [], commissionByMonth: {} } as Awaited<ReturnType<typeof adminApi.stats>>)
+  if (adminApiMode) {
+    const now = new Date()
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+      const key = date.toISOString().slice(0, 7)
+      return { key, label: date.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), value: remote.data.commissionByMonth[key] ?? 0 }
+    })
+    const routes = remote.data.topRoutes.map(({ route, count }) => ({ name: route, value: count }))
+    return (
+      <>
+        <PageHeader title="Statistiques" description="Indicateurs d'activité de la plateforme." />
+        {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+        {remote.loading && <p className="py-4 text-sm text-muted">Chargement des statistiques…</p>}
+        <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-3">
+          <Card className="p-5"><p className="text-xs text-muted">Opérations terminées</p><p className="mt-1 text-2xl font-bold">{remote.data.done}</p></Card>
+          <Card className="p-5"><p className="text-xs text-muted">Dont mutualisées (plusieurs clients)</p><p className="mt-1 text-2xl font-bold">{remote.data.poolingsMulti}</p></Card>
+          <Card className="p-5"><p className="text-xs text-muted">Note moyenne des transporteurs</p><p className="mt-1 text-2xl font-bold">{remote.data.avgRating?.toFixed(1) ?? '—'}</p></Card></div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="p-4"><h2 className="px-1 text-base font-semibold">Commissions acquises par mois</h2><div className="mt-3 h-60" role="img" aria-label="Commissions par mois"><ResponsiveContainer width="100%" height="100%"><BarChart data={months}><CartesianGrid vertical={false} stroke="#E2E8F0" /><XAxis dataKey="label" tickLine={false} axisLine={false} /><YAxis width={44} tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v: number) => `${Math.round(v / 1000)} k`} /><Tooltip formatter={(v) => formatFCFA(Number(v))} /><Bar dataKey="value" name="Commissions" fill="#FF7A00" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>
+            <Card className="p-4"><h2 className="px-1 text-base font-semibold">Trajets les plus demandés</h2><div className="mt-3 h-60" role="img" aria-label="Trajets les plus fréquents"><ResponsiveContainer width="100%" height="100%"><BarChart data={routes} layout="vertical" margin={{ left: 30 }}><CartesianGrid horizontal={false} stroke="#E2E8F0" /><XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} /><YAxis type="category" dataKey="name" width={130} tickLine={false} axisLine={false} fontSize={11} /><Tooltip /><Bar dataKey="value" name="Opérations" fill="#123E68" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div></Card></div></div>
+      </>
+    )
+  }
   const routes = Object.entries(transportViews(db).reduce<Record<string, number>>((m, v) => { const k = `${v.offer.from} → ${v.offer.to}`; m[k] = (m[k] ?? 0) + 1; return m }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value }))
   const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setMonth(d.getMonth() - (5 - i)); return { key: d.toISOString().slice(0, 7), label: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), value: 0 } })
   db.commissions.filter((c) => c.status === 'acquise').forEach((c) => { const t = db.transports.find((x) => x.id === c.transportId); const m = t && months.find((x) => x.key === (t.events[t.events.length - 1].at.slice(0, 7))); if (m) m.value += c.commission })
@@ -131,8 +242,12 @@ export function StatsPage() {
 
 export function AuditPage() {
   const { db } = useAuth()
-  return (<><PageHeader title="Journal d'activité" description="Actions importantes enregistrées sur la plateforme (CDC §22)." /><DataTable rows={db.audit.slice(0, 200)} rowKey={(a) => a.id} empty={<EmptyState title="Aucune activité enregistrée" />} columns={[
-    { header: 'Date', cell: (a) => fmtDateTime(a.createdAt) }, { header: 'Utilisateur', cell: (a) => userName(db.users.find((u) => u.id === a.actorId)) }, { header: 'Action', cell: (a) => a.action.replace(/_/g, ' ') }, { header: 'Détail', cell: (a) => a.detail }]} /></>)
+  const remote = useAdminResource(() => adminApi.audit('?per_page=200'), [] as AdminAuditRecord[])
+  const rows = adminApiMode ? remote.data.map((row) => ({ ...row, id: String(row.id) })) : db.audit.slice(0, 200).map((a) => ({ id: a.id, actor: userName(db.users.find((u) => u.id === a.actorId)), action: a.action, detail: a.detail, createdAt: a.createdAt }))
+  return (<><PageHeader title="Journal d'activité" description="Actions importantes enregistrées sur la plateforme (CDC §22)." />
+    {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+    <DataTable rows={rows} rowKey={(a) => a.id} empty={<EmptyState title="Aucune activité enregistrée" />} columns={[
+      { header: 'Date', cell: (a) => fmtDateTime(a.createdAt) }, { header: 'Utilisateur', cell: (a) => a.actor ?? '—' }, { header: 'Action', cell: (a) => a.action.replace(/_/g, ' ') }, { header: 'Détail', cell: (a) => a.detail }]} /></>)
 }
 
 
@@ -159,7 +274,7 @@ export function ContactMessagesPage() {
   const flash = useFlash()
   const [params, setParams] = useSearchParams()
   const [messages, setMessages] = useState<ContactMessageRecord[]>([])
-  const [loading, setLoading] = useState(apiEnabled)
+  const [loading, setLoading] = useState(adminApiMode)
   const [reloadKey, setReloadKey] = useState(0)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'tous' | ContactStatus>('tous')
@@ -168,7 +283,7 @@ export function ContactMessagesPage() {
   const autoRead = useRef(new Set<number>())
 
   useEffect(() => {
-    if (!apiEnabled) return
+    if (!adminApiMode) return
     let active = true
     const load = (silent: boolean) =>
       adminApi.contactMessages()
@@ -229,10 +344,10 @@ export function ContactMessagesPage() {
       <PageHeader
         title="Messages de contact"
         description="Messages reçus depuis le formulaire public de MUTLOG."
-        action={apiEnabled ? <Button variant="outline" onClick={() => { setLoading(true); setReloadKey((k) => k + 1) }}>Actualiser</Button> : undefined}
+        action={adminApiMode ? <Button variant="outline" onClick={() => { setLoading(true); setReloadKey((k) => k + 1) }}>Actualiser</Button> : undefined}
       />
       {flash.node}
-      {!apiEnabled ? (
+      {!adminApiMode ? (
         <Card className="p-5"><h2 className="font-semibold">API non configurée</h2><p className="mt-2 text-sm text-muted">Configurez VITE_API_URL pour consulter ici les messages enregistrés par Laravel. Le mode démonstration transmet uniquement une notification locale.</p></Card>
       ) : (
         <div className="space-y-4">
@@ -285,13 +400,15 @@ export function ContactMessagesPage() {
 export function SettingsPage() {
   const { db } = useAuth()
   const flash = useFlash()
-  const [s, setS] = useState<Settings>(db.settings)
-  const [loading, setLoading] = useState(apiEnabled)
+  const [s, setS] = useState<Settings>(() => adminApiMode ? DEFAULT_SETTINGS : db.settings)
+  const [loading, setLoading] = useState(adminApiMode)
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    if (!apiEnabled) return
+    if (!adminApiMode) return
     let active = true
+    setLoadError('')
     adminApi.settings()
       .then((result) => {
         if (!active) return
@@ -311,7 +428,7 @@ export function SettingsPage() {
         }))
       })
       .catch((cause) => {
-        if (active) flash.err(cause instanceof Error ? cause.message : 'Impossible de charger les paramètres.')
+        if (active) setLoadError(cause instanceof Error ? cause.message : 'Impossible de charger les paramètres.')
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -326,7 +443,7 @@ export function SettingsPage() {
 
     setSaving(true)
     try {
-      if (apiEnabled) {
+      if (adminApiMode) {
         const result = await adminApi.updateSettings({
           commissionPct: s.commissionPct,
           commissionBearer: s.commissionBearer,
@@ -365,6 +482,7 @@ export function SettingsPage() {
     <>
       <PageHeader title="Paramètres" description="Commission, répartition du prix et règles de matching." />
       <form onSubmit={save} noValidate className="max-w-2xl space-y-6">{flash.node}
+        {loadError && <Notice tone="danger">{loadError}</Notice>}
         {loading && <p className="text-sm text-muted">Chargement des paramètres depuis le serveur…</p>}
         <Card className="space-y-4 p-5">
           <h2 className="text-base font-semibold">Commission MUTLOG</h2>
@@ -375,7 +493,7 @@ export function SettingsPage() {
         <Card className="space-y-4 p-5"><h2 className="text-base font-semibold">Matching</h2>
           <div className="grid gap-4 sm:grid-cols-2"><Field label="Rayon « départ compatible » (km)" htmlFor="k"><Input id="k" type="number" min={0} max={500} value={s.cityRadiusKm} onChange={num('cityRadiusKm')} disabled={loading || saving} /></Field><Field label="Tolérance de date (± jours)" htmlFor="j"><Input id="j" type="number" min={0} max={30} value={s.dateToleranceDays} onChange={num('dateToleranceDays')} disabled={loading || saving} /></Field></div></Card>
         <Card className="space-y-3 p-5"><h2 className="text-base font-semibold">Paiement</h2><Field label="Consignes affichées au client" htmlFor="pi"><textarea id="pi" rows={3} maxLength={500} disabled={loading || saving} className="w-full rounded-control border border-line p-3 text-sm" value={s.paymentInstructions} onChange={(e) => setS({ ...s, paymentInstructions: e.target.value })} /></Field><p className="text-xs text-muted">{s.paymentInstructions.length}/500 caractères</p></Card>
-        <div className="flex flex-wrap gap-3"><Button type="submit" size="lg" disabled={loading || saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button><Button type="button" size="lg" variant="outline" onClick={async () => (await ask({ message: 'Remplacer toutes les données par le jeu de démonstration ?', confirmLabel: 'Réinitialiser' })) && resetDemo()}>Réinitialiser les données de démonstration</Button></div>
+        <div className="flex flex-wrap gap-3"><Button type="submit" size="lg" disabled={loading || saving || !!loadError}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button>{!adminApiMode && <Button type="button" size="lg" variant="outline" onClick={async () => (await ask({ message: 'Remplacer toutes les données par le jeu de démonstration ?', confirmLabel: 'Réinitialiser' })) && resetDemo()}>Réinitialiser les données de démonstration</Button>}</div>
       </form>
     </>
   )

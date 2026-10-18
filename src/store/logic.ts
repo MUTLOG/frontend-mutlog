@@ -7,11 +7,14 @@ import type {
 } from '@/domain/types'
 import type { OperationStatus } from '@/types/operation'
 import { fail, ok, type Db, type Result } from './db'
+import { today, userName } from '@/lib/format'
+
+// Helpers purs déplacés dans lib/format.ts ; réexportés ici le temps de la migration.
+export { today, userName }
 
 let n = 0
 export const uid = (p: string) => `${p}_${Date.now().toString(36)}${(n++).toString(36)}${Math.random().toString(36).slice(2, 5)}`
 export const nowIso = () => new Date().toISOString()
-export const today = () => new Date().toISOString().slice(0, 10)
 
 /** Empreinte DÉMO (non sécurisée). Le backend utilisera bcrypt/argon2 (CDC §22). */
 export function demoHash(s: string): string {
@@ -27,7 +30,6 @@ export function log(db: Db, actorId: string, action: string, detail: string) {
   db.audit.unshift({ id: uid('a'), actorId, action, detail, createdAt: nowIso() })
 }
 const admins = (db: Db) => db.users.filter((u) => u.role === 'admin')
-export const userName = (u?: User) => (u ? u.company || `${u.firstName} ${u.lastName}`.trim() : '—')
 
 function setRequestStatus(db: Db, requestId: string, status: OperationStatus, poolingId?: string) {
   const r = db.requests.find((x) => x.id === requestId)

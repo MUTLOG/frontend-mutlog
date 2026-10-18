@@ -1,10 +1,17 @@
 import { Check } from 'lucide-react'
-import type { MatchResult } from '@/domain/matching'
+import type { Offer } from '@/domain/types'
 import { fmtDate, fmtT } from '@/components/shared/ui-bits'
 import type { ReactNode } from 'react'
 
 /** Carte « Correspondances trouvées » (direction UI/UX §3) : score, trajet, camion, capacité, critères validés. */
-export function MatchCard({ m, transporter, price, actions }: { m: MatchResult; transporter?: string; price?: string; actions: ReactNode }) {
+export interface MatchCardData {
+  offer: Pick<Offer, 'from' | 'to' | 'date' | 'totalCapacityT' | 'availableT'>
+  score: number
+  compatible?: boolean
+  criteria: Array<{ key: string; label: string }>
+}
+
+export function MatchCard({ m, transporter, price, actions }: { m: MatchCardData; transporter?: string; price?: string; actions: ReactNode }) {
   const o = m.offer
   return (
     <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start">

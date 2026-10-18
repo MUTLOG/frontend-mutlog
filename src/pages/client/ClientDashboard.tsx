@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarCheck, FileText, Truck, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -5,37 +6,52 @@ import { Card, CardHeader } from '@/components/ui/card'
 import { StatCard } from '@/components/ui/stat-card'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useAuth } from '@/features/auth/useAuth'
-import { EmptyState, fmtDate, fmtT, GOODS_LABEL, RequestBadge } from '@/components/shared/ui-bits'
+import { EmptyState, fmtDate, fmtT, GOODS_LABEL, Notice, RequestStatusBadge } from '@/components/shared/ui-bits'
 import { formatFCFA } from '@/lib/format'
-import { clientSavings, clientTransports } from '@/store/selectors'
+import { clientSavings } from '@/domain/savings'
+import { useResource } from '@/hooks/useResource'
+import { clientApi, type ClientRequest, type ClientShipment } from '@/services/mutlogApi'
+
+const NO_REQUESTS: ClientRequest[] = []
+const NO_SHIPMENTS: ClientShipment[] = []
+const IN_TRANSIT = ['en_cours', 'arrive_destination']
+const DELIVERED = ['livree', 'terminee']
 
 export default function ClientDashboard() {
-  const { db, user } = useAuth()
+  const { user } = useAuth()
   const me = user!
-  const reqs = db.requests.filter((r) => r.clientId === me.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  const trs = clientTransports(db, me.id)
+  const requests = useResource(() => clientApi.requests('?per_page=100'), NO_REQUESTS)
+  const shipments = useResource(() => clientApi.shipments(), NO_SHIPMENTS)
+  const error = requests.error || shipments.error
+  const ready = requests.loaded && shipments.loaded && !error
+
+  const reqs = useMemo(() => [...requests.data].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')), [requests.data])
+  const trs = shipments.data
   const inProgress = reqs.filter((r) => ['demande', 'recherche', 'mutualisation'].includes(r.status)).length
   const confirmed = reqs.filter((r) => r.status === 'confirmee').length
-  const moving = trs.filter((v) => ['en_cours', 'arrive_destination'].includes(v.t.status)).length
-  const done = trs.filter((v) => ['livree', 'terminee'].includes(v.t.status)).length
-  const savings = clientSavings(db, me.id)
-  const tracked = trs.find((v) => ['en_cours', 'arrive_destination'].includes(v.t.status)) ?? trs.find((v) => v.t.status === 'confirmee')
+  const moving = trs.filter((t) => IN_TRANSIT.includes(t.status)).length
+  const done = trs.filter((t) => DELIVERED.includes(t.status)).length
+  const savings = clientSavings(trs)
+  const tracked = trs.find((t) => IN_TRANSIT.includes(t.status)) ?? trs.find((t) => t.status === 'confirmee')
+  const stat = (n: number) => (ready ? String(n) : '—')
+  const pending = <p className="px-5 py-6 text-sm text-muted" role="status">{error ? 'Données indisponibles.' : 'Chargement…'}</p>
 
   return (
     <>
       <PageHeader title="Tableau de bord" description={`Bienvenue ${me.firstName} ! Voici un aperçu de vos activités.`}
         action={<Button asChild size="lg"><Link to="/client/demandes/nouvelle">Publier une demande</Link></Button>} />
+      {error && <div className="mb-4"><Notice tone="danger">{error}</Notice></div>}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard icon={FileText} label="Demandes de transport" value={String(inProgress)} sub="En cours" />
-        <StatCard icon={CalendarCheck} label="Réservations" value={String(confirmed)} sub="Confirmées" subTone="success" />
-        <StatCard icon={Truck} label="Expéditions" value={String(done + moving)} sub={`${moving} en transit · ${done} terminées`} tone="success" subTone="muted" />
-        <StatCard icon={Wallet} label="Économies réalisées" value={formatFCFA(savings)} sub="Grâce à la mutualisation" tone="accent" subTone="muted" />
+        <StatCard icon={FileText} label="Demandes de transport" value={stat(inProgress)} sub="En cours" />
+        <StatCard icon={CalendarCheck} label="Réservations" value={stat(confirmed)} sub="Confirmées" subTone="success" />
+        <StatCard icon={Truck} label="Expéditions" value={stat(done + moving)} sub={ready ? `${moving} en transit · ${done} terminées` : '—'} tone="success" subTone="muted" />
+        <StatCard icon={Wallet} label="Économies réalisées" value={ready ? formatFCFA(savings) : '—'} sub="Grâce à la mutualisation" tone="accent" subTone="muted" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <Card>
           <CardHeader title="Demandes récentes" action={<Link to="/client/demandes" className="text-sm font-semibold text-primary-2 hover:underline">Voir tout</Link>} />
-          {reqs.length === 0 ? <EmptyState title="Aucune demande pour le moment" text="Publiez votre première demande de transport." action={<Button asChild><Link to="/client/demandes/nouvelle">Publier une demande</Link></Button>} /> : (
+          {!ready ? pending : reqs.length === 0 ? <EmptyState title="Aucune demande pour le moment" text="Publiez votre première demande de transport." action={<Button asChild><Link to="/client/demandes/nouvelle">Publier une demande</Link></Button>} /> : (
             <ul className="mt-3 divide-y divide-line">
               {reqs.slice(0, 4).map((r) => (
                 <li key={r.id}>
@@ -45,7 +61,7 @@ export default function ClientDashboard() {
                       <span className="block truncate text-sm font-semibold text-ink">{r.from} → {r.to}</span>
                       <span className="block truncate text-xs text-muted">{fmtT(r.weightT)} · {GOODS_LABEL[r.goods]}</span>
                     </span>
-                    <span className="flex flex-col items-end gap-1"><RequestBadge db={db} r={r} /><span className="text-xs text-muted">{fmtDate(r.date)}</span></span>
+                    <span className="flex flex-col items-end gap-1"><RequestStatusBadge status={r.status} /><span className="text-xs text-muted">{fmtDate(r.date)}</span></span>
                   </Link>
                 </li>
               ))}
@@ -55,10 +71,10 @@ export default function ClientDashboard() {
 
         <Card>
           <CardHeader title="Suivi de mes expéditions" action={<Link to="/client/expeditions" className="text-sm font-semibold text-primary-2 hover:underline">Voir tout</Link>} />
-          {tracked ? (
-            <Link to={`/client/expeditions/${tracked.t.id}`} className="block p-5">
-              <p className="text-sm font-semibold text-ink">{tracked.offer.from} → {tracked.offer.to} <span className="ml-1 text-xs font-normal text-muted">{tracked.t.ref}</span></p>
-              <TrackLine from={tracked.offer.from} to={tracked.offer.to} status={tracked.t.status} />
+          {!ready ? pending : tracked ? (
+            <Link to={`/client/expeditions/${tracked.id}`} className="block p-5">
+              <p className="text-sm font-semibold text-ink">{tracked.offer.from} → {tracked.offer.to} <span className="ml-1 text-xs font-normal text-muted">{tracked.ref}</span></p>
+              <TrackLine from={tracked.offer.from} to={tracked.offer.to} status={tracked.status} />
             </Link>
           ) : <EmptyState title="Aucune expédition en cours" text="Vos transports confirmés apparaîtront ici." />}
         </Card>

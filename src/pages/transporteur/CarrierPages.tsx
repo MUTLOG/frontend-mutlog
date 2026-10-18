@@ -15,6 +15,8 @@ import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, GOODS_LABEL, GOODS_O
 import RouteMap from '@/features/maps/RouteMap'
 import { ask } from '@/components/shared/confirm'
 import { useAuth } from '@/features/auth/useAuth'
+import { adminApiMode, type ApiUser } from '@/services/api'
+import { adminApi, type AdminVehicle } from '@/services/mutlogApi'
 import { CITIES, findCity } from '@/domain/geo'
 import { compatibleRequests } from '@/domain/matching'
 import type { GoodsType, PricingMode, Vehicle } from '@/domain/types'
@@ -23,6 +25,7 @@ import { today, userName } from '@/store/logic'
 import * as L from '@/store/logic'
 import { carrierTransports, monthlyNet } from '@/store/selectors'
 import { run } from '@/store/store'
+import { useAdminResource } from '@/pages/admin/useAdminResource'
 
 const sel = 'h-11 w-full rounded-control border border-line bg-surface px-3 text-sm text-ink focus-visible:border-primary-2'
 
@@ -193,6 +196,86 @@ export function CarrierReservationsPage() {
 }
 
 export function VehiclesPage({ adminView = false }: { adminView?: boolean }) {
+  return adminView && adminApiMode ? <AdminVehiclesPage /> : <VehiclesDemoPage adminView={adminView} />
+}
+
+function AdminVehiclesPage() {
+  const flash = useFlash()
+  const [edit, setEdit] = useState<Partial<Vehicle> | null>(null)
+  const vehicles = useAdminResource(adminApi.vehicles, [] as AdminVehicle[])
+  const owners = useAdminResource(() => adminApi.users('?role=transporteur&per_page=100'), [] as ApiUser[])
+  const toggle = async (vehicle: AdminVehicle, key: 'active' | 'available') => {
+    try {
+      await adminApi.updateVehicle(vehicle.id, {
+        type: vehicle.type, brand: vehicle.brand ?? '', plate: vehicle.plate, capacityT: vehicle.capacityT,
+        volumeM3: vehicle.volumeM3, goodsAccepted: vehicle.goodsAccepted, available: key === 'available' ? !vehicle.available : vehicle.available,
+        active: key === 'active' ? !vehicle.active : vehicle.active,
+      })
+      vehicles.reload()
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de modifier le véhicule.')
+    }
+  }
+  const rows = vehicles.data.map((vehicle) => ({ ...vehicle, id: String(vehicle.id), ownerId: String(vehicle.ownerId), brand: vehicle.brand ?? '' }))
+  const ownerName = (id: string) => {
+    const owner = owners.data.find((item) => String(item.id) === id)
+    return owner?.company || owner?.displayName || (owner ? `${owner.firstName} ${owner.lastName}` : '—')
+  }
+  return (
+    <>
+      <PageHeader title="Véhicules" description="Type, capacité et disponibilité." action={<Button size="lg" onClick={() => setEdit({ goodsAccepted: ['generales'], available: true, active: true })}><Plus className="h-4 w-4" /> Ajouter un véhicule</Button>} />
+      {flash.node}
+      {(vehicles.error || owners.error) && <Notice tone="danger">{vehicles.error || owners.error}</Notice>}
+      {vehicles.loading && <Card className="p-6 text-center text-sm text-muted">Chargement des véhicules…</Card>}
+      <DataTable rows={rows} rowKey={(vehicle) => vehicle.id} empty={<EmptyState title="Aucun véhicule" />} columns={[
+        { header: 'Véhicule', cell: (vehicle) => <span><strong>{vehicle.type}</strong><br /><span className="text-xs text-muted">{vehicle.brand} · {vehicle.plate}</span></span> },
+        { header: 'Propriétaire', cell: (vehicle) => ownerName(vehicle.ownerId) },
+        { header: 'Capacité', cell: (vehicle) => `${vehicle.capacityT} t · ${vehicle.volumeM3} m³` },
+        { header: 'Disponible', cell: (vehicle) => <Button size="sm" variant={vehicle.available ? 'primary' : 'outline'} onClick={() => void toggle(vehicle, 'available')}>{vehicle.available ? 'Oui' : 'Non'}</Button> },
+        { header: 'Actif', cell: (vehicle) => <Button size="sm" variant={vehicle.active ? 'primary' : 'outline'} onClick={() => void toggle(vehicle, 'active')}>{vehicle.active ? 'Oui' : 'Non'}</Button> },
+        { header: '', cell: (vehicle) => <Button size="sm" variant="ghost" onClick={() => setEdit(vehicle)}>Modifier</Button> },
+      ]} />
+      {edit && <AdminVehicleModal vehicle={edit} owners={owners.data} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); vehicles.reload(); flash.ok('Véhicule enregistré.') }} />}
+    </>
+  )
+}
+
+function AdminVehicleModal({ vehicle, owners, onClose, onSaved }: { vehicle: Partial<Vehicle>; owners: ApiUser[]; onClose: () => void; onSaved: () => void }) {
+  const [owner, setOwner] = useState(String(vehicle.ownerId ?? owners[0]?.id ?? ''))
+  const [form, setForm] = useState({ type: vehicle.type ?? '', brand: vehicle.brand ?? '', plate: vehicle.plate ?? '', capacity: String(vehicle.capacityT ?? ''), volume: String(vehicle.volumeM3 ?? ''), goods: vehicle.goodsAccepted ?? ['generales'] as GoodsType[] })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setError('')
+    setSaving(true)
+    try {
+      const input = { type: form.type, brand: form.brand, plate: form.plate, capacityT: Number(form.capacity.replace(',', '.')), volumeM3: Number(form.volume.replace(',', '.')) || 0, goodsAccepted: form.goods, available: vehicle.available ?? true, active: vehicle.active ?? true }
+      if (vehicle.id) await adminApi.updateVehicle(vehicle.id, input)
+      else await adminApi.createVehicle({ ...input, ownerId: owner })
+      onSaved()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible d’enregistrer le véhicule.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <Modal title={vehicle.id ? 'Modifier le véhicule' : 'Ajouter un véhicule'} onClose={onClose}>
+      <div className="space-y-3">
+        {error && <Notice tone="danger">{error}</Notice>}
+        {!vehicle.id && <Field label="Propriétaire" htmlFor="admin-vehicle-owner" required><select id="admin-vehicle-owner" className={sel} value={owner} onChange={(event) => setOwner(event.target.value)}>{owners.map((item) => <option key={item.id} value={item.id}>{item.company || item.displayName || `${item.firstName} ${item.lastName}`}</option>)}</select></Field>}
+        <Field label="Type de véhicule" htmlFor="admin-vehicle-type" required><Input id="admin-vehicle-type" value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} placeholder="Camion 12 tonnes" /></Field>
+        <Field label="Marque" htmlFor="admin-vehicle-brand"><Input id="admin-vehicle-brand" value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></Field>
+        <Field label="Immatriculation" htmlFor="admin-vehicle-plate" required><Input id="admin-vehicle-plate" value={form.plate} onChange={(event) => setForm({ ...form, plate: event.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3"><Field label="Capacité (t)" htmlFor="admin-vehicle-capacity" required><Input id="admin-vehicle-capacity" inputMode="decimal" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></Field><Field label="Volume (m³)" htmlFor="admin-vehicle-volume"><Input id="admin-vehicle-volume" inputMode="decimal" value={form.volume} onChange={(event) => setForm({ ...form, volume: event.target.value })} /></Field></div>
+        <fieldset><legend className="mb-1.5 text-sm font-medium">Marchandises acceptées</legend><div className="flex flex-wrap gap-2">{GOODS_OPTIONS.map(([key, label]) => <label key={key} className={`cursor-pointer rounded-full border px-3 py-1 text-xs ${form.goods.includes(key) ? 'border-primary bg-primary text-white' : 'border-line'}`}><input type="checkbox" className="sr-only" checked={form.goods.includes(key)} onChange={() => setForm({ ...form, goods: form.goods.includes(key) ? form.goods.filter((item) => item !== key) : [...form.goods, key] })} />{label}</label>)}</div></fieldset>
+        <Button size="lg" className="w-full" onClick={() => void save()} disabled={saving || (!vehicle.id && owners.length === 0)}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button>
+      </div>
+    </Modal>
+  )
+}
+
+function VehiclesDemoPage({ adminView = false }: { adminView?: boolean }) {
   const { db, user } = useAuth()
   const flash = useFlash()
   const [edit, setEdit] = useState<Partial<Vehicle> | null>(null)

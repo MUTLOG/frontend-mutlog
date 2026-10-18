@@ -1,10 +1,26 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeAll } from 'vitest'
+import { describe, expect, it, beforeAll, vi } from 'vitest'
 import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import App from './App'
 import { run, resetDemo } from './store/store'
 import * as L from './store/logic'
+
+// L'espace client lit désormais l'API : ici elle répond « aucune donnée » (le détail avec données est testé
+// dans client-space.test.tsx). Les autres espaces sont encore sur la base locale et ne passent pas par ces appels.
+vi.mock('@/services/mutlogApi', async (orig) => {
+  const real = await orig<typeof import('@/services/mutlogApi')>()
+  const none = async () => []
+  return {
+    ...real,
+    clientApi: {
+      ...real.clientApi, requests: none, reservations: none, shipments: none,
+      request: async () => { throw new Error('Demande introuvable.') }, shipment: async () => { throw new Error('Expédition introuvable.') },
+    },
+    sharedApi: { ...real.sharedApi, reviews: none },
+    publicApi: { ...real.publicApi, settings: async () => real.EMPTY_PUBLIC_SETTINGS },
+  }
+})
 
 beforeAll(() => {
   ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
@@ -40,8 +56,6 @@ describe('rendu des pages (aucune erreur d\'exécution)', () => {
     for (const p of ['/client/dashboard', '/client/demandes', '/client/demandes/nouvelle', '/client/demandes/r_s1', '/client/reservations', '/client/expeditions', '/client/paiements', '/client/messages', '/client/historique', '/client/evaluations', '/client/notifications', '/client/profil', '/client/rechercher', '/client/transports/o1'])
       expect((await show(p)).length, p).toBeGreaterThan(40)
     expect(await show('/client/dashboard')).toContain('Bienvenue Sophie')
-    const trId = (JSON.parse(localStorage.getItem('mutlog.db.v1')!).transports as { id: string; status: string }[]).find((t) => t.status === 'en_cours')!.id
-    expect(await show(`/client/expeditions/${trId}`)).toContain('Itinéraire et traçabilité')
   })
   it('espace transporteur', async () => {
     as('0100000021')

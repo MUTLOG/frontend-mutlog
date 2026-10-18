@@ -10,6 +10,9 @@ import { DataTable, EmptyState, fmtDate, fmtDateTime, Notice, Stars, Tabs, useFl
 import { StatusBadge } from '@/components/tracking/StatusBadge'
 import { useAuth } from '@/features/auth/useAuth'
 import { useNotifications } from '@/features/notifications/useNotifications'
+import { adminApiMode, setApiUser, type ApiUser } from '@/services/api'
+import { authApi } from '@/services/mutlogApi'
+import { useAdminResource } from '@/pages/admin/useAdminResource'
 import { CITIES } from '@/domain/geo'
 import { formatFCFA } from '@/lib/format'
 import { avgRating, demoHash, userName } from '@/store/logic'
@@ -91,6 +94,82 @@ export function MessagesPage() {
 }
 
 export function ProfilePage() {
+  const { user } = useAuth()
+  return user?.role === 'admin' && adminApiMode ? <AdminProfilePage /> : <ProfileDemoPage />
+}
+
+function AdminProfilePage() {
+  const remote = useAdminResource(authApi.me, null as ApiUser | null)
+  const flash = useFlash()
+  const [f, setF] = useState({ firstName: '', lastName: '', company: '', email: '', address: '', city: '', idNumber: '' })
+  const [pw, setPw] = useState({ old: '', next: '' })
+  useEffect(() => {
+    if (!remote.data) return
+    const { firstName, lastName, company, email, address, city, idNumber } = remote.data
+    setF({ firstName, lastName, company: company ?? '', email: email ?? '', address, city, idNumber: idNumber ?? '' })
+  }, [remote.data])
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!f.firstName.trim() || !f.lastName.trim()) return flash.err('Nom et prénom requis.')
+    if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) return flash.err('Adresse e-mail invalide.')
+    try {
+      const updated = await authApi.updateProfile({
+        firstName: f.firstName.trim(), lastName: f.lastName.trim(), company: f.company.trim() || null,
+        email: f.email.trim() || null, address: f.address.trim(), city: f.city, idNumber: f.idNumber.trim() || null,
+      })
+      setApiUser(updated)
+      remote.reload()
+      flash.ok('Profil enregistré.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible d’enregistrer le profil.')
+    }
+  }
+  const changePw = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (pw.next.length < 8) return flash.err('Le nouveau mot de passe doit contenir au moins 8 caractères.')
+    try {
+      await authApi.changePassword(pw.old, pw.next)
+      setPw({ old: '', next: '' })
+      flash.ok('Mot de passe modifié.')
+    } catch (cause) {
+      flash.err(cause instanceof Error ? cause.message : 'Impossible de modifier le mot de passe.')
+    }
+  }
+  return (
+    <>
+      <PageHeader title="Mon profil" description="Vos informations personnelles." />
+      <div className="max-w-3xl space-y-6">
+        {flash.node}
+        {remote.loading && <Card className="p-6 text-center text-sm text-muted">Chargement du profil…</Card>}
+        {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+        {remote.data && <>
+          <form onSubmit={(event) => void save(event)} noValidate><Card className="space-y-4 p-5 sm:p-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Prénom" htmlFor="admin-profile-first"><Input id="admin-profile-first" value={f.firstName} onChange={(event) => setF({ ...f, firstName: event.target.value })} /></Field>
+              <Field label="Nom" htmlFor="admin-profile-last"><Input id="admin-profile-last" value={f.lastName} onChange={(event) => setF({ ...f, lastName: event.target.value })} /></Field>
+              <Field label="Entreprise / structure" htmlFor="admin-profile-company"><Input id="admin-profile-company" value={f.company} onChange={(event) => setF({ ...f, company: event.target.value })} /></Field>
+              <Field label="Téléphone (identifiant de connexion)" htmlFor="admin-profile-phone"><Input id="admin-profile-phone" value={remote.data.phone} disabled /></Field>
+              <Field label="E-mail" htmlFor="admin-profile-email"><Input id="admin-profile-email" type="email" value={f.email} onChange={(event) => setF({ ...f, email: event.target.value })} /></Field>
+              <Field label="Ville" htmlFor="admin-profile-city"><select id="admin-profile-city" value={f.city} onChange={(event) => setF({ ...f, city: event.target.value })} className="h-10 w-full rounded-control border border-line bg-surface px-3 text-sm">{CITIES.map((city) => <option key={city.name}>{city.name}</option>)}</select></Field>
+              <Field label="Adresse" htmlFor="admin-profile-address"><Input id="admin-profile-address" value={f.address} onChange={(event) => setF({ ...f, address: event.target.value })} /></Field>
+            </div>
+            <Button type="submit" size="lg" disabled={!remote.data || remote.loading}>Enregistrer</Button>
+          </Card></form>
+          <form onSubmit={(event) => void changePw(event)} noValidate><Card className="space-y-4 p-5 sm:p-6">
+            <h2 className="text-base font-semibold text-ink">Changer de mot de passe</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Mot de passe actuel" htmlFor="admin-profile-current-password"><Input id="admin-profile-current-password" type="password" autoComplete="current-password" value={pw.old} onChange={(event) => setPw({ ...pw, old: event.target.value })} /></Field>
+              <Field label="Nouveau mot de passe" htmlFor="admin-profile-new-password" hint="8 caractères minimum."><Input id="admin-profile-new-password" type="password" autoComplete="new-password" value={pw.next} onChange={(event) => setPw({ ...pw, next: event.target.value })} /></Field>
+            </div>
+            <Button type="submit" variant="outline">Modifier le mot de passe</Button>
+          </Card></form>
+        </>}
+      </div>
+    </>
+  )
+}
+
+function ProfileDemoPage() {
   const { db, user } = useAuth()
   const me = user!
   const flash = useFlash()

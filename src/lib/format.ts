@@ -1,3 +1,5 @@
+import type { User } from '@/domain/types'
+
 /** 350000 -> "350 000 FCFA" (espaces insécables, format Bénin) */
 export function formatFCFA(amount: number): string {
   const n = Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F')
@@ -7,3 +9,9 @@ export function formatFCFA(amount: number): string {
 export function formatTonnes(value: number): string {
   return `${value.toString().replace('.', ',')} ${value > 1 ? 'tonnes' : 'tonne'}`
 }
+
+/** Date du jour au format ISO « aaaa-mm-jj ». */
+export const today = () => new Date().toISOString().slice(0, 10)
+
+/** Nom affiché d'un compte : raison sociale si elle existe, sinon « Prénom Nom ». */
+export const userName = (u?: Pick<User, 'company' | 'firstName' | 'lastName'>) => (u ? u.company || `${u.firstName} ${u.lastName}`.trim() : '—')

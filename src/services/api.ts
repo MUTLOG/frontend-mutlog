@@ -36,6 +36,17 @@ export type ApiUser = {
   createdAt?: string
 }
 
+/** Erreur renvoyée par l'API : conserve le statut HTTP (404, 403, 422…) pour que l'interface puisse réagir. */
+export class ApiError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+export const errorMessage = (cause: unknown, fallback: string) => (cause instanceof Error && cause.message ? cause.message : fallback)
+
 export function setToken(value: string | null) {
   token = value
   if (value) localStorage.setItem(TOKEN_KEY, value)
@@ -53,6 +64,7 @@ export function getApiUser(): ApiUser | null {
   } catch { return null }
 }
 export const apiEnabled = Boolean(configuredBase) && import.meta.env.MODE !== 'test'
+export const adminApiMode = import.meta.env.MODE !== 'test'
 
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const headers = new Headers(init.headers)
@@ -78,7 +90,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
     const errors = data.errors && typeof data.errors === 'object'
       ? Object.values(data.errors as Record<string, unknown>).flat().filter((v) => typeof v === 'string').join(' ')
       : ''
-    throw new Error(errors || (typeof data.message === 'string' ? data.message : `Erreur API (${response.status})`))
+    throw new ApiError(errors || (typeof data.message === 'string' ? data.message : `Erreur API (${response.status})`), response.status)
   }
   return toCamel<T>(data)
 }
