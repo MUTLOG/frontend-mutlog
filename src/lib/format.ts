@@ -15,3 +15,6 @@ export const today = () => new Date().toISOString().slice(0, 10)
 
 /** Nom affiché d'un compte : raison sociale si elle existe, sinon « Prénom Nom ». */
 export const userName = (u?: Pick<User, 'company' | 'firstName' | 'lastName'>) => (u ? u.company || `${u.firstName} ${u.lastName}`.trim() : '—')
+
+/** Libellé court d'un mois « aaaa-mm » : « oct », « nov »… (graphiques de revenus). */
+export const monthLabel = (ym: string) => new Date(`${ym}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')

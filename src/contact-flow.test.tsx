@@ -16,8 +16,6 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/services/api', async (orig) => ({
   ...(await orig<typeof import('@/services/api')>()),
-  apiEnabled: true,
-  adminApiMode: true,
   getApiUser: () => h.admin,
 }))
 vi.mock('@/services/mutlogApi', async (orig) => {

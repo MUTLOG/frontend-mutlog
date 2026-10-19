@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
-import { adminApiMode, apiEnabled } from '@/services/api'
+import { errorMessage } from '@/services/api'
 import { sharedApi } from '@/services/mutlogApi'
-import { run } from '@/store/store'
 
 export interface NotificationItem {
   id: string
@@ -25,11 +24,9 @@ const EMPTY: Snapshot = { items: [], loaded: false, error: '' }
 /**
  * Notifications du serveur (Laravel) partagées entre la cloche et la page Notifications :
  * un seul chargement, actualisé toutes les 30 s et au retour sur l'onglet.
- * Sans API (mode démonstration), les notifications restent celles du stockage local.
  */
 let snapshot: Snapshot = EMPTY
 let owner: string | null = null
-let remoteEnabled = apiEnabled
 let subscribers = 0
 let timer: ReturnType<typeof setInterval> | undefined
 let inflight = false
@@ -64,7 +61,7 @@ function normalize(raw: unknown): NotificationItem[] {
 }
 
 export async function refreshNotifications() {
-  if (!remoteEnabled || inflight) return
+  if (inflight) return
   inflight = true
   const forOwner = owner
   try {
@@ -72,7 +69,7 @@ export async function refreshNotifications() {
     if (owner === forOwner) publish({ items, loaded: true, error: '' })
   } catch (cause) {
     if (owner === forOwner) {
-      publish({ ...snapshot, loaded: true, error: cause instanceof Error ? cause.message : 'Impossible de charger les notifications.' })
+      publish({ ...snapshot, loaded: true, error: errorMessage(cause, 'Impossible de charger les notifications.') })
     }
   } finally {
     inflight = false
@@ -81,10 +78,9 @@ export async function refreshNotifications() {
 
 const onFocus = () => { void refreshNotifications() }
 
-function acquire(userId: string, useApi: boolean) {
-  if (owner !== userId || remoteEnabled !== useApi) {
+function acquire(userId: string) {
+  if (owner !== userId) {
     owner = userId
-    remoteEnabled = useApi
     publish(EMPTY)
   }
   subscribers += 1
@@ -103,55 +99,35 @@ function acquire(userId: string, useApi: boolean) {
 }
 
 export function useNotifications() {
-  const { db, user } = useAuth()
+  const { user } = useAuth()
   const userId = user ? String(user.id) : null
-  const useApi = apiEnabled || (adminApiMode && user?.role === 'admin')
   const remote = useSyncExternalStore(subscribe, () => snapshot)
 
   useEffect(() => {
-    if (!useApi || !userId) return
-    return acquire(userId, useApi)
-  }, [userId, useApi])
+    if (!userId) return
+    return acquire(userId)
+  }, [userId])
 
-  const items: NotificationItem[] = useApi
-    ? remote.items
-    : db.notifications
-        .filter((n) => n.userId === userId)
-        .map(({ id, title, body, link, read, createdAt }) => ({ id, title, body, link, read, createdAt }))
+  const items = remote.items
   const unread = items.filter((n) => !n.read).length
 
   const markRead = useCallback(async (id: string) => {
-    if (!useApi) {
-      run((d) => { const n = d.notifications.find((x) => x.id === id); if (n) n.read = true; return { ok: true as const, value: undefined } })
-      return
-    }
     try {
       await sharedApi.markNotificationRead(id)
       publish({ ...snapshot, items: snapshot.items.map((n) => (n.id === id ? { ...n, read: true } : n)), error: '' })
     } catch (cause) {
-      publish({ ...snapshot, error: cause instanceof Error ? cause.message : 'Impossible de marquer la notification comme lue.' })
+      publish({ ...snapshot, error: errorMessage(cause, 'Impossible de marquer la notification comme lue.') })
     }
-  }, [useApi])
+  }, [])
 
   const markAll = useCallback(async () => {
-    if (!useApi) {
-      run((d) => { d.notifications.filter((n) => n.userId === userId).forEach((n) => (n.read = true)); return { ok: true as const, value: undefined } })
-      return
-    }
     try {
       await sharedApi.markNotificationsRead()
       publish({ ...snapshot, items: snapshot.items.map((n) => ({ ...n, read: true })), error: '' })
     } catch (cause) {
-      publish({ ...snapshot, error: cause instanceof Error ? cause.message : 'Impossible de marquer les notifications comme lues.' })
+      publish({ ...snapshot, error: errorMessage(cause, 'Impossible de marquer les notifications comme lues.') })
     }
-  }, [userId, useApi])
+  }, [])
 
-  return {
-    items,
-    unread,
-    loaded: useApi ? remote.loaded : true,
-    error: useApi ? remote.error : '',
-    markRead,
-    markAll,
-  }
+  return { items, unread, loaded: remote.loaded, error: remote.error, markRead, markAll }
 }

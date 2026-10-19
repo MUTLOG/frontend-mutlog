@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { SpaceConfig } from '@/routes/navigation'
 import { useAuth } from '@/features/auth/useAuth'
 import { useNotifications } from '@/features/notifications/useNotifications'
-import { userName } from '@/store/logic'
+import { userName } from '@/lib/format'
 import { useIdleLogout } from '@/hooks/useIdleLogout'
 
 function initials(name: string) {

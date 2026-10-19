@@ -58,7 +58,6 @@ const h = vi.hoisted(() => {
 
 vi.mock('@/services/api', async (orig) => ({
   ...(await orig<typeof import('@/services/api')>()),
-  apiEnabled: true,
   getApiUser: () => h.client,
 }))
 vi.mock('@/services/mutlogApi', async (orig) => {
@@ -92,7 +91,7 @@ const text = () => (document.body.textContent ?? '').replace(/[\u202F\u00A0]/g, 
 describe('espace client branché sur l’API', () => {
   it('tableau de bord : demandes, expéditions et économies viennent du serveur', async () => {
     open('/client/dashboard')
-    expect(await screen.findByText(/Bienvenue Sophie/)).toBeTruthy()
+    expect(await screen.findByText(/Bienvenue Sophie/, undefined, { timeout: 5000 })).toBeTruthy() // premier rendu : chargement des modules
     await waitFor(() => expect(text()).toContain('Cotonou → Natitingou'))
     expect(text()).toContain('Lokossa → Cotonou')
     expect(text()).toContain('150 000 FCFA') // forfait 200 000 − part 50 000 ; l'expédition au tarif à la tonne ne compte pas
@@ -202,5 +201,45 @@ describe('espace client branché sur l’API', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Reçu' })[0])
     expect(await screen.findByText(/Reçu REC-2026-0001/)).toBeTruthy()
     expect(text()).toContain('Client : Sophie Adjovi')
+  })
+
+  describe('panne signalée sur le transport', () => {
+    const broken = (status: string) => ({ ...h.shipments[0], breakdown: { id: 1, kind: 'pneu', urgency: 'elevee', location: 'RNIE 2, près de Bohicon', status } })
+
+    it('fiche d’expédition : le client voit la panne, son lieu et l’état de prise en charge, sans détail interne', async () => {
+      h.api.shipment.mockResolvedValueOnce(broken('en_attente'))
+      open('/client/expeditions/31')
+      expect(await screen.findByText(/Panne signalée sur votre transport/)).toBeTruthy()
+      expect(text()).toContain('pneu crevé à RNIE 2, près de Bohicon')
+      expect(text()).toContain('MUTLOG suit la situation')
+    })
+
+    it('fiche d’expédition : la bannière indique quand MUTLOG a pris la panne en charge', async () => {
+      h.api.shipment.mockResolvedValueOnce(broken('prise_en_charge'))
+      open('/client/expeditions/31')
+      expect(await screen.findByText(/Panne signalée sur votre transport/)).toBeTruthy()
+      expect(text()).toContain('MUTLOG a pris la situation en charge')
+    })
+
+    it('fiche d’expédition sans panne : aucune bannière', async () => {
+      open('/client/expeditions/31')
+      expect(await screen.findByText('Itinéraire et traçabilité')).toBeTruthy()
+      expect(text()).not.toContain('Panne signalée')
+    })
+
+    it('tableau de bord : alerte visible avec lien vers l’expédition concernée', async () => {
+      h.api.shipments.mockResolvedValueOnce([broken('en_attente'), h.shipments[1]])
+      open('/client/dashboard')
+      expect(await screen.findByText(/Panne signalée sur votre transport/)).toBeTruthy()
+      const link = document.querySelector('a[href="/client/expeditions/31"]')
+      expect(link?.textContent).toContain('MUT-2026-000031')
+      expect(text()).toContain('Panne signalée') // badge sur la carte de suivi
+    })
+
+    it('liste des expéditions : badge « Panne signalée » sur la ligne concernée', async () => {
+      h.api.shipments.mockResolvedValueOnce([broken('en_attente'), h.shipments[1]])
+      open('/client/expeditions')
+      expect((await screen.findAllByText('Panne signalée')).length).toBeGreaterThan(0)
+    })
   })
 })

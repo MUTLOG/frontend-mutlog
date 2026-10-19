@@ -10,10 +10,8 @@ import { Notice } from '@/components/shared/ui-bits'
 import { homeFor } from '@/features/auth/useAuth'
 import { CITIES } from '@/domain/geo'
 import type { UserType } from '@/domain/types'
-import * as L from '@/store/logic'
-import { DEMO_PASSWORD } from '@/store/seed'
-import { getDb, resetDemo, run } from '@/store/store'
-import { api, apiEnabled, setApiUser, setToken, type ApiUser } from '@/services/api'
+import { errorMessage, setApiUser, setToken } from '@/services/api'
+import { authApi } from '@/services/mutlogApi'
 
 const selectCls = 'h-10 w-full rounded-control border border-line bg-surface px-3 text-sm text-ink focus-visible:border-primary-2'
 
@@ -51,23 +49,23 @@ export function LoginPage() {
   const nav = useLocation().state as { from?: string; expired?: boolean } | null
   const from = nav?.from
 
-  const submit = async (e: React.FormEvent, p = phone, pw = password) => {
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (busy) return
     setError('')
-    if (apiEnabled) {
-      try {
-        const result = await api<{ user: ApiUser; token: string }>('/auth/login', { method: 'POST', json: { phone: p, password: pw } })
-        setToken(result.token)
-        setApiUser(result.user)
-        navigate(from && from !== '/connexion' ? from : homeFor(result.user.role), { replace: true })
-      } catch (error) { setError(error instanceof Error ? error.message : 'Connexion impossible.') }
-      return
+    setBusy(true)
+    try {
+      const result = await authApi.login(phone, password)
+      setToken(result.token)
+      setApiUser(result.user)
+      navigate(from && from !== '/connexion' ? from : homeFor(result.user.role), { replace: true })
+    } catch (cause) {
+      setError(errorMessage(cause, 'Connexion impossible.'))
+      setBusy(false)
     }
-    const res = run((d) => L.login(d, p, pw))
-    if (!res.ok) return setError(res.error)
-    navigate(from && from !== '/connexion' ? from : homeFor(res.value.role), { replace: true })
   }
-  const demo = getDb().users.filter((u) => ['u_sophie', 'u_jean', 'u_admin'].includes(u.id))
 
   return (
     <AuthFrame title="Connexion" subtitle="Connectez-vous avec votre numéro de téléphone.">
@@ -78,24 +76,12 @@ export function LoginPage() {
           <Input id="phone" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01 97 00 00 00" required />
         </Field>
         <Field label="Mot de passe" htmlFor="password"><PasswordInput id="password" value={password} onChange={setPassword} autoComplete="current-password" /></Field>
-        <Button type="submit" size="lg" className="w-full">Se connecter</Button>
+        <Button type="submit" size="lg" className="w-full" disabled={busy}>Se connecter</Button>
         <div className="flex justify-between text-sm">
           <Link to="/mot-de-passe-oublie" className="font-medium text-primary-2 hover:underline">Mot de passe oublié ?</Link>
           <Link to="/inscription" className="font-medium text-primary-2 hover:underline">Créer un compte</Link>
         </div>
       </form>
-      {!apiEnabled && <div className="mt-8 rounded-control border border-dashed border-line bg-background p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Mode démonstration</p>
-        <p className="mt-1 text-xs text-muted">Données fictives enregistrées dans ce navigateur. Mot de passe commun : <code className="font-mono text-ink">{DEMO_PASSWORD}</code></p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {demo.map((u) => (
-            <Button key={u.id} type="button" size="sm" variant="outline" onClick={(e) => submit(e, u.phone, DEMO_PASSWORD)}>
-              {u.role === 'admin' ? 'Administrateur' : u.role === 'client' ? 'Client' : 'Transporteur'}
-            </Button>
-          ))}
-          <Button type="button" size="sm" variant="ghost" onClick={() => { resetDemo(); setError('') }}>Réinitialiser les données</Button>
-        </div>
-      </div>}
     </AuthFrame>
   )
 }
@@ -108,6 +94,7 @@ export function RegisterPage() {
   const [f, setF] = useState({ firstName: '', lastName: '', company: '', phone: '', email: '', address: '', city: 'Cotonou', idNumber: '', password: '', userType: 'producteur' as UserType, accept: false })
   const [error, setError] = useState('')
   const [done, setDone] = useState<{ pending: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }))
   const types = role === 'client' ? CLIENT_TYPES : CARRIER_TYPES
@@ -119,31 +106,29 @@ export function RegisterPage() {
     if (!f.firstName.trim() || !f.lastName.trim() || !f.address.trim()) return setError('Renseignez votre nom, votre prénom et votre adresse.')
     if (!f.accept) return setError('Vous devez accepter les conditions d\'utilisation.')
     setError('')
-    if (apiEnabled) {
-      try {
-        const result = await api<{ user: ApiUser; token: string }>('/auth/register', { method: 'POST', json: {
-          role, userType: f.userType, firstName: f.firstName, lastName: f.lastName, company: f.company || null,
-          phone: f.phone, email: f.email || null, address: f.address, city: f.city, idNumber: f.idNumber || null,
-          password: f.password, acceptTerms: true,
-        } })
-        if (role === 'client') {
-          setToken(result.token)
-          setApiUser(result.user)
-          navigate('/client/dashboard', { replace: true })
-        } else {
-          setToken(null)
-          setApiUser(null)
-          setDone({ pending: true })
-        }
-      } catch (error) { setError(error instanceof Error ? error.message : 'Inscription impossible.') }
-      return
+    if (busy) return
+    setBusy(true)
+    try {
+      const result = await authApi.register({
+        role, userType: f.userType, firstName: f.firstName, lastName: f.lastName, company: f.company || null,
+        phone: f.phone, email: f.email || null, address: f.address, city: f.city, idNumber: f.idNumber || null,
+        password: f.password, acceptTerms: true,
+      })
+      if (role === 'client') {
+        setToken(result.token)
+        setApiUser(result.user)
+        navigate('/client/dashboard', { replace: true })
+      } else {
+        // Un compte transporteur doit d'abord être validé par MUTLOG : pas de session ouverte.
+        setToken(null)
+        setApiUser(null)
+        setDone({ pending: true })
+      }
+    } catch (cause) {
+      setError(errorMessage(cause, 'Inscription impossible.'))
+    } finally {
+      setBusy(false)
     }
-    const res = run((d) => L.register(d, { role, userType: f.userType, firstName: f.firstName, lastName: f.lastName, company: f.company, phone: f.phone, email: f.email, address: f.address, city: f.city, idNumber: f.idNumber, password: f.password }))
-    if (!res.ok) return setError(res.error)
-    if (role === 'client') {
-      run((d) => L.login(d, f.phone, f.password))
-      navigate('/client/dashboard', { replace: true })
-    } else setDone({ pending: true })
   }
 
   if (done) {
@@ -191,7 +176,7 @@ export function RegisterPage() {
           <input type="checkbox" checked={f.accept} onChange={(e) => set('accept', e.target.checked)} className="mt-1 h-4 w-4" />
           <span>J'accepte les <Link to="/conditions" className="font-medium text-primary-2 underline" target="_blank">conditions d'utilisation</Link> et le traitement de mes données personnelles.</span>
         </label>
-        <Button type="submit" size="lg" className="w-full">Créer mon compte</Button>
+        <Button type="submit" size="lg" className="w-full" disabled={busy}>Créer mon compte</Button>
         <p className="text-center text-sm text-muted">Déjà inscrit ? <Link to="/connexion" className="font-medium text-primary-2 hover:underline">Se connecter</Link></p>
       </form>
     </AuthFrame>
@@ -208,30 +193,18 @@ export function ForgotPasswordPage() {
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (apiEnabled) {
-      try {
-        const result = await api<{ message: string; demoCode?: string }>('/auth/forgot', { method: 'POST', json: { phone } })
-        setSent(result.demoCode ?? '')
-        setError(''); setStep('code')
-      } catch (error) { setError(error instanceof Error ? error.message : 'Demande impossible.') }
-      return
-    }
-    const res = run((d) => L.requestReset(d, phone))
-    if (!res.ok) return setError(res.error)
-    setError(''); setSent(res.value); setStep('code')
+    try {
+      const result = await authApi.forgot(phone)
+      setSent(result.demoCode ?? '')
+      setError(''); setStep('code')
+    } catch (cause) { setError(errorMessage(cause, 'Demande impossible.')) }
   }
   const reset = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (apiEnabled) {
-      try {
-        await api('/auth/reset', { method: 'POST', json: { phone, code, password: pw } })
-        setError(''); setStep('done')
-      } catch (error) { setError(error instanceof Error ? error.message : 'Réinitialisation impossible.') }
-      return
-    }
-    const res = run((d) => L.resetPassword(d, phone, code, pw))
-    if (!res.ok) return setError(res.error)
-    setStep('done')
+    try {
+      await authApi.reset(phone, code, pw)
+      setError(''); setStep('done')
+    } catch (cause) { setError(errorMessage(cause, 'Réinitialisation impossible.')) }
   }
   return (
     <AuthFrame title="Mot de passe oublié" subtitle="Récupérez l'accès à votre compte avec un code de vérification.">

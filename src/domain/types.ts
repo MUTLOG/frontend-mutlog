@@ -1,7 +1,4 @@
-import type { OperationStatus } from '@/types/operation'
-
-export type Role = 'client' | 'transporteur' | 'admin'
-export type AccountStatus = 'actif' | 'en_attente' | 'suspendu'
+/** Listes de valeurs partagées par les formulaires et les badges (les données elles-mêmes viennent de l'API : voir @/types/remote). */
 
 /** Types d'utilisateur : CDC §4 (cibles) et §7.1 (« type d'utilisateur »). */
 export type UserType =
@@ -145,77 +142,3 @@ export interface Transport {
 }
 
 export type PaymentStatus = 'en_attente' | 'confirme' | 'echoue' | 'rembourse'
-
-export interface Payment {
-  id: string
-  transportId: string
-  clientId: string
-  requestId: string
-  amount: number
-  method: 'mobile_money' | 'especes' | 'virement' | 'autre'
-  /** Référence de transaction déclarée par le client (validation manuelle admin en V1, CDC §14). */
-  reference?: string
-  status: PaymentStatus
-  createdAt: string
-  confirmedAt?: string
-  receiptNo?: string
-}
-
-export interface CommissionRecord {
-  id: string
-  transportId: string
-  gross: number
-  ratePct: number
-  commission: number
-  netCarrier: number
-  status: 'prevue' | 'acquise' | 'annulee'
-}
-
-export interface Review {
-  id: string
-  transportId: string
-  fromId: string
-  toId: string
-  rating: number
-  comment?: string
-  reported: boolean
-  createdAt: string
-}
-
-export interface Notification {
-  id: string
-  userId: string
-  title: string
-  body: string
-  link?: string
-  read: boolean
-  createdAt: string
-}
-
-export interface Message {
-  id: string
-  transportId?: string
-  offerId?: string
-  fromId: string
-  toId: string
-  text: string
-  createdAt: string
-}
-
-export interface AuditLog {
-  id: string
-  actorId: string
-  action: string
-  detail: string
-  createdAt: string
-}
-
-export interface Settings {
-  commissionPct: number // 5 à 10 (CDC §13)
-  commissionBearer: 'transporteur' | 'clients'
-  shareBasis: 'poids' | 'volume'
-  cityRadiusKm: number
-  dateToleranceDays: number
-  /** Consignes de paiement Mobile Money affichées au client (numéro MUTLOG à renseigner). */
-  paymentInstructions: string
-}

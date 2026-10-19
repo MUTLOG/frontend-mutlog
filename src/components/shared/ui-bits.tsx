@@ -4,10 +4,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import type { GoodsType, Offer, PaymentStatus, Reservation, TransportRequest } from '@/domain/types'
+import type { GoodsType, Offer, PaymentStatus, Reservation } from '@/domain/types'
 import type { OperationStatus } from '@/types/operation'
-import type { Db } from '@/store/db'
-import { findMatches } from '@/domain/matching'
+import type { TransportBreakdown } from '@/services/mutlogApi'
 
 export const GOODS_LABEL: Record<GoodsType, string> = {
   generales: 'Marchandises générales', agricoles: 'Produits agricoles', alimentaires: 'Produits alimentaires',
@@ -50,14 +49,6 @@ export function RequestStatusBadge({ status, matchCount }: { status: OperationSt
   if (status === 'terminee') return <Badge tone="success">Terminé</Badge>
   if (status === 'annule') return <Badge tone="danger">Annulé</Badge>
   return <Badge tone="pending">En attente</Badge>
-}
-
-/** @deprecated Version « démo » (base locale), encore utilisée par la page admin Demo : à supprimer avec elle. */
-export function RequestBadge({ db, r }: { db: Db; r: TransportRequest }) {
-  const n = r.status === 'recherche'
-    ? findMatches(r, db.offers, db.settings, (id) => db.users.find((u) => u.id === id)?.status === 'actif').length
-    : undefined
-  return <RequestStatusBadge status={r.status} matchCount={n} />
 }
 
 const RESERVATION: Record<Reservation['status'], { label: string; tone: React.ComponentProps<typeof Badge>['tone'] }> = {
@@ -192,5 +183,18 @@ export function DataTable<T>({ rows: all, columns, rowKey, empty, pageSize = 10 
         </nav>
       )}
     </Card>
+  )
+}
+
+export const BREAKDOWN_KIND_LABEL: Record<string, string> = { mecanique: 'panne mécanique', pneu: 'pneu crevé', accident: 'accident', carburant: 'problème de carburant', autre: 'incident' }
+
+/** Panne en cours sur le transport du client : type, lieu et état (jamais la description interne). */
+export function BreakdownNotice({ breakdown }: { breakdown: TransportBreakdown }) {
+  const kind = BREAKDOWN_KIND_LABEL[breakdown.kind] ?? 'incident'
+  return (
+    <Notice tone="warning">
+      <strong>Panne signalée sur votre transport.</strong> Le transporteur a déclaré un {kind} à {breakdown.location}.{' '}
+      {breakdown.status === 'prise_en_charge' ? 'MUTLOG a pris la situation en charge' : 'MUTLOG suit la situation'} et vous informe dès que le transport reprend.
+    </Notice>
   )
 }

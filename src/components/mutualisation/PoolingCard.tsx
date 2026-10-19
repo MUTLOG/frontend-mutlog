@@ -4,13 +4,16 @@ import { Card } from '@/components/ui/card'
 import { fmtDate, fmtT } from '@/components/shared/ui-bits'
 import { fillRate } from '@/domain/pooling'
 import type { Offer, PoolingFinance } from '@/domain/types'
+
+/** Champs d'une offre utilisés par la carte (une offre de la base locale ou de l'API convient). */
+export type PoolingOffer = Pick<Offer, 'from' | 'to' | 'date' | 'totalCapacityT' | 'availableT'>
 import { formatFCFA } from '@/lib/format'
 
 export interface PoolingRow { key: string; label: string; weightT: number; payable?: number; detail?: string }
 
 /** Écran « MUTUALISATION » (direction UI/UX §4) : trajet, camion, clients, total, taux de remplissage, prix, commission, actions. */
 export function PoolingCard({ offer, vehicleLabel, rows, finance, status, actions, showNet = true }: {
-  offer: Offer; vehicleLabel?: string; rows: PoolingRow[]; finance: PoolingFinance | null; status?: ReactNode; actions?: ReactNode; showNet?: boolean
+  offer: PoolingOffer; vehicleLabel?: string; rows: PoolingRow[]; finance: PoolingFinance | null; status?: ReactNode; actions?: ReactNode; showNet?: boolean
 }) {
   const total = rows.reduce((s, r) => s + r.weightT, 0)
   const rate = fillRate(total, offer.totalCapacityT)

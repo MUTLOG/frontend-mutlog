@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarCheck, FileText, Truck, Wallet } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader } from '@/components/ui/card'
 import { StatCard } from '@/components/ui/stat-card'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useAuth } from '@/features/auth/useAuth'
-import { EmptyState, fmtDate, fmtT, GOODS_LABEL, Notice, RequestStatusBadge } from '@/components/shared/ui-bits'
+import { BreakdownNotice, EmptyState, fmtDate, fmtT, GOODS_LABEL, Notice, RequestStatusBadge } from '@/components/shared/ui-bits'
 import { formatFCFA } from '@/lib/format'
 import { clientSavings } from '@/domain/savings'
 import { useResource } from '@/hooks/useResource'
@@ -32,7 +33,8 @@ export default function ClientDashboard() {
   const moving = trs.filter((t) => IN_TRANSIT.includes(t.status)).length
   const done = trs.filter((t) => DELIVERED.includes(t.status)).length
   const savings = clientSavings(trs)
-  const tracked = trs.find((t) => IN_TRANSIT.includes(t.status)) ?? trs.find((t) => t.status === 'confirmee')
+  const tracked = trs.find((t) => t.breakdown) ?? trs.find((t) => IN_TRANSIT.includes(t.status)) ?? trs.find((t) => t.status === 'confirmee')
+  const broken = trs.filter((t) => t.breakdown)
   const stat = (n: number) => (ready ? String(n) : '—')
   const pending = <p className="px-5 py-6 text-sm text-muted" role="status">{error ? 'Données indisponibles.' : 'Chargement…'}</p>
 
@@ -41,6 +43,7 @@ export default function ClientDashboard() {
       <PageHeader title="Tableau de bord" description={`Bienvenue ${me.firstName} ! Voici un aperçu de vos activités.`}
         action={<Button asChild size="lg"><Link to="/client/demandes/nouvelle">Publier une demande</Link></Button>} />
       {error && <div className="mb-4"><Notice tone="danger">{error}</Notice></div>}
+      {broken.map((t) => <div key={t.id} className="mb-4"><BreakdownNotice breakdown={t.breakdown!} /><p className="mt-1 text-sm"><Link to={`/client/expeditions/${t.id}`} className="font-semibold text-primary-2 hover:underline">Suivre {t.offer.from} → {t.offer.to} ({t.ref})</Link></p></div>)}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard icon={FileText} label="Demandes de transport" value={stat(inProgress)} sub="En cours" />
         <StatCard icon={CalendarCheck} label="Réservations" value={stat(confirmed)} sub="Confirmées" subTone="success" />
@@ -73,7 +76,7 @@ export default function ClientDashboard() {
           <CardHeader title="Suivi de mes expéditions" action={<Link to="/client/expeditions" className="text-sm font-semibold text-primary-2 hover:underline">Voir tout</Link>} />
           {!ready ? pending : tracked ? (
             <Link to={`/client/expeditions/${tracked.id}`} className="block p-5">
-              <p className="text-sm font-semibold text-ink">{tracked.offer.from} → {tracked.offer.to} <span className="ml-1 text-xs font-normal text-muted">{tracked.ref}</span></p>
+              <p className="text-sm font-semibold text-ink">{tracked.offer.from} → {tracked.offer.to} <span className="ml-1 text-xs font-normal text-muted">{tracked.ref}</span> {tracked.breakdown && <Badge tone="danger">Panne signalée</Badge>}</p>
               <TrackLine from={tracked.offer.from} to={tracked.offer.to} status={tracked.status} />
             </Link>
           ) : <EmptyState title="Aucune expédition en cours" text="Vos transports confirmés apparaîtront ici." />}

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Package, Scale, Search } from 'lucide-react'
 import { useTitle } from '@/hooks/useTitle'
@@ -8,19 +7,20 @@ import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { Stars, fmtDate, fmtT, GOODS_LABEL, GOODS_OPTIONS, offerPriceLabel, EmptyState } from '@/components/shared/ui-bits'
 import { CITIES } from '@/domain/geo'
-import { searchOffers, type OfferSort } from '@/domain/matching'
-import type { GoodsType, Offer } from '@/domain/types'
-import { apiEnabled } from '@/services/api'
+import type { GoodsType } from '@/domain/types'
 import truckImage from '@/assets/mutlog_truck.png'
-import { publicApi, type RemoteOffer } from '@/services/mutlogApi'
-import { avgRating, today, userName } from '@/store/logic'
-import { useDb } from '@/store/store'
+import { EMPTY_PUBLIC_SETTINGS, publicApi, type RemoteOffer } from '@/services/mutlogApi'
+import { today } from '@/lib/format'
+import { useResource } from '@/hooks/useResource'
+
+/** Critères de tri acceptés par l'API (`sort=`). */
+type OfferSort = 'date' | 'prix' | 'capacite'
+const NO_OFFERS: RemoteOffer[] = []
 
 const selectCls = 'h-10 w-full rounded-control border border-line bg-surface px-3 text-sm text-ink focus-visible:border-primary-2'
 
 export default function SearchPage() {
   useTitle('Rechercher un transport')
-  const db = useDb()
   const [params, setParams] = useSearchParams()
   const base = useLocation().pathname.startsWith('/client') ? '/client' : ''
   const q = {
@@ -28,31 +28,13 @@ export default function SearchPage() {
     goods: (params.get('goods') ?? '') as GoodsType | '', weightT: Number(params.get('poids')) || undefined,
   }
   const sort = (params.get('tri') ?? 'date') as OfferSort
-  const [remoteResults, setRemoteResults] = useState<Offer[]>([])
-  const [remoteLoading, setRemoteLoading] = useState(false)
-  const [remoteError, setRemoteError] = useState('')
-  useEffect(() => {
-    if (!apiEnabled) return
-    let cancelled = false
-    setRemoteLoading(true)
-    setRemoteError('')
-    publicApi.offers({ from: q.from || undefined, to: q.to || undefined, date: q.date || undefined, goods: q.goods || undefined, weightT: q.weightT, sort })
-      .then((offers) => {
-        if (cancelled) return
-        setRemoteResults(offers.map((offer: RemoteOffer) => ({
-          id: String(offer.id), transporterId: String(offer.transporter?.id ?? ''), vehicleId: '',
-          from: offer.from, to: offer.to, date: offer.date, totalCapacityT: Number(offer.totalCapacityT),
-          availableT: Number(offer.availableT), goodsAccepted: (offer.goodsAccepted ?? []) as GoodsType[],
-          pricingMode: offer.pricingMode, price: Number(offer.price), notes: offer.notes,
-          status: (offer.status === 'ouverte' ? 'ouverte' : offer.status === 'complete' ? 'complete' : 'terminee') as Offer['status'],
-          createdAt: '',
-        })))
-      })
-      .catch((error: unknown) => { if (!cancelled) setRemoteError(error instanceof Error ? error.message : 'Recherche API impossible.') })
-      .finally(() => { if (!cancelled) setRemoteLoading(false) })
-    return () => { cancelled = true }
-  }, [params.toString()])
-  const results = apiEnabled ? remoteResults : searchOffers(db.offers, q, db.settings, today(), (id) => db.users.find((u) => u.id === id)?.status === 'actif', sort)
+  const search = useResource(
+    () => publicApi.offers({ from: q.from || undefined, to: q.to || undefined, date: q.date || undefined, goods: q.goods || undefined, weightT: q.weightT, sort }),
+    NO_OFFERS, [params.toString()],
+  )
+  const settings = useResource(() => publicApi.settings(), EMPTY_PUBLIC_SETTINGS)
+  const results = search.data
+  const searching = !search.loaded
 
   const apply = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -92,7 +74,7 @@ export default function SearchPage() {
           </Field>
           <Field label="Poids (tonnes)" htmlFor="poids"><Input id="poids" name="poids" inputMode="decimal" placeholder="Ex. 2" defaultValue={q.weightT ?? ''} /></Field>
           <Button type="submit" size="lg" className="w-full"><Search className="h-4 w-4" /> Rechercher</Button>
-          <p className="text-xs text-muted">Les villes proches (moins de {db.settings.cityRadiusKm} km) et les dates à ±{db.settings.dateToleranceDays} jours sont incluses.</p>
+          {settings.data.cityRadiusKm > 0 && <p className="text-xs text-muted">Les villes proches (moins de {settings.data.cityRadiusKm} km) et les dates à ±{settings.data.dateToleranceDays} jours sont incluses.</p>}
         </Card>
       </form>
 
@@ -100,7 +82,7 @@ export default function SearchPage() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 id="res" className="text-2xl font-bold text-ink">Transports disponibles</h1>
-            <p className="text-sm text-muted" aria-live="polite">{remoteLoading ? 'Recherche en cours…' : `${results.length} résultat${results.length > 1 ? 's' : ''} trouvé${results.length > 1 ? 's' : ''}`}</p>
+            <p className="text-sm text-muted" aria-live="polite">{searching ? 'Recherche en cours…' : `${results.length} résultat${results.length > 1 ? 's' : ''} trouvé${results.length > 1 ? 's' : ''}`}</p>
           </div>
           <label className="flex items-center gap-2 text-sm text-muted">
             Trier par
@@ -112,14 +94,14 @@ export default function SearchPage() {
           </label>
         </div>
 
-        {remoteError && <Card className="mb-4 border border-red-200 p-4 text-sm text-red-700">{remoteError}</Card>}
-        {results.length === 0 ? (
+        {search.error && <Card className="mb-4 border border-red-200 p-4 text-sm text-red-700" role="alert">{search.error}</Card>}
+        {searching ? null : results.length === 0 && !search.error ? (
           <Card><EmptyState title="Aucun transport ne correspond à votre recherche" text="Élargissez vos critères, ou publiez une demande : MUTLOG vous préviendra dès qu'un transport compatible sera disponible." action={<Button asChild><Link to="/client/demandes/nouvelle">Publier une demande</Link></Button>} /></Card>
         ) : (
           <ul className="space-y-4">
             {results.map((o) => {
-              const t = db.users.find((u) => u.id === o.transporterId)
-              const r = avgRating(db, o.transporterId)
+              const t = o.transporter
+              const r = t?.rating
               const price = offerPriceLabel(o)
               return (
                 <li key={o.id}>
@@ -130,13 +112,13 @@ export default function SearchPage() {
                       <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm text-muted sm:grid-cols-2">
                         <li className="flex items-center gap-2"><CalendarDays className="h-4 w-4" aria-hidden="true" /> {fmtDate(o.date)}</li>
                         <li className="flex items-center gap-2"><Scale className="h-4 w-4" aria-hidden="true" /> {fmtT(o.totalCapacityT)}</li>
-                        <li className="flex items-center gap-2"><Package className="h-4 w-4" aria-hidden="true" /> {o.goodsAccepted.map((g) => GOODS_LABEL[g]).slice(0, 2).join(', ')}</li>
+                        <li className="flex items-center gap-2"><Package className="h-4 w-4" aria-hidden="true" /> {o.goodsAccepted.map((g) => GOODS_LABEL[g as GoodsType] ?? g).slice(0, 2).join(', ')}</li>
                         <li className="font-medium text-ink">Disponible : {fmtT(o.availableT)}</li>
                       </ul>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-semibold text-ink">{userName(t)}</span>
+                        <span className="font-semibold text-ink">{t?.displayName ?? '—'}</span>
                         {r && <span className="flex items-center gap-1 text-muted"><Stars value={r.avg} size={13} /> {r.avg.toFixed(1)} ({r.count} avis)</span>}
-                        {t?.status === 'actif' && <Badge tone="success">Vérifié</Badge>}
+                        {t?.verified && <Badge tone="success">Vérifié</Badge>}
                       </div>
                     </div>
                     <div className="flex items-end justify-between gap-3 sm:w-44 sm:flex-col sm:items-end sm:justify-between">

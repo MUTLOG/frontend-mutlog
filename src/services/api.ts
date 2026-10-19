@@ -1,5 +1,9 @@
 const configuredBase = import.meta.env.VITE_API_URL?.trim()
-export const API_BASE_URL = (configuredBase || 'http://localhost:8000/api/v1').replace(/\/+$/, '')
+/**
+ * Adresse de l'API Laravel. En développement elle vaut http://localhost:8000/api/v1 par défaut ; en production
+ * `VITE_API_URL` est obligatoire (sinon les appels échouent avec un message explicite au lieu d'afficher de fausses données).
+ */
+export const API_BASE_URL = (configuredBase || (import.meta.env.DEV ? 'http://localhost:8000/api/v1' : '')).replace(/\/+$/, '')
 const TOKEN_KEY = 'mutlog.token'
 const USER_KEY = 'mutlog.api-user'
 let token: string | null = localStorage.getItem(TOKEN_KEY)
@@ -53,24 +57,47 @@ export function setToken(value: string | null) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 export const getToken = () => token
-export function setApiUser(user: ApiUser | null) {
-  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
-  else localStorage.removeItem(USER_KEY)
-}
-export function getApiUser(): ApiUser | null {
+
+// Utilisateur connecté : mis en cache (référence stable) et diffusé aux composants, y compris entre onglets.
+function readStoredUser(): ApiUser | null {
   try {
     const raw = localStorage.getItem(USER_KEY)
     return raw ? JSON.parse(raw) as ApiUser : null
   } catch { return null }
 }
-export const apiEnabled = Boolean(configuredBase) && import.meta.env.MODE !== 'test'
-export const adminApiMode = import.meta.env.MODE !== 'test'
+let cachedUser: ApiUser | null | undefined
+const userListeners = new Set<() => void>()
+const notifyUser = () => userListeners.forEach((listener) => listener())
+
+export function getApiUser(): ApiUser | null {
+  if (cachedUser === undefined) cachedUser = readStoredUser()
+  return cachedUser
+}
+export function setApiUser(user: ApiUser | null) {
+  cachedUser = user
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
+  else localStorage.removeItem(USER_KEY)
+  notifyUser()
+}
+export function subscribeApiUser(listener: () => void) {
+  userListeners.add(listener)
+  return () => { userListeners.delete(listener) }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== USER_KEY && event.key !== TOKEN_KEY) return
+    token = localStorage.getItem(TOKEN_KEY)
+    cachedUser = undefined
+    notifyUser()
+  })
+}
 
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.json !== undefined) headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (!API_BASE_URL) throw new Error('L’adresse de l’API MUTLOG n’est pas configurée (variable VITE_API_URL).')
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`, {

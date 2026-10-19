@@ -1,11 +1,9 @@
+import { useMemo, useSyncExternalStore } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { getDb, run, useDb } from '@/store/store'
-import * as L from '@/store/logic'
 import type { Role, User } from '@/domain/types'
-import { api, apiEnabled, getApiUser, setApiUser, setToken } from '@/services/api'
+import { api, getApiUser, setApiUser, setToken, subscribeApiUser, type ApiUser } from '@/services/api'
 
-function apiUserAsDomain(): User | null {
-  const user = getApiUser()
+function toDomainUser(user: ApiUser | null): User | null {
   if (!user) return null
   return {
     id: String(user.id), role: user.role, userType: user.userType as User['userType'],
@@ -16,27 +14,23 @@ function apiUserAsDomain(): User | null {
   }
 }
 
-export function useAuth() {
-  const db = useDb()
-  const remoteUser = apiEnabled ? apiUserAsDomain() : null
-  const user = remoteUser ?? db.users.find((u) => u.id === db.session.userId) ?? null
-  return {
-    db,
-    user,
-    login: (phone: string, password: string) => run((d) => L.login(d, phone, password)),
-    logout: async () => {
-      if (apiEnabled) {
-        try { if (getApiUser()) await api('/auth/logout', { method: 'POST' }) } finally { setToken(null); setApiUser(null) }
-      }
-      return run((d) => { d.session.userId = null; return { ok: true as const, value: undefined } })
-    },
+/** Ferme la session : prévient le serveur (sans bloquer si le jeton a déjà expiré) puis efface la session locale. */
+async function logout() {
+  try {
+    if (getApiUser()) await api('/auth/logout', { method: 'POST' })
+  } catch {
+    // Jeton déjà invalide ou serveur injoignable : la session locale est fermée dans tous les cas.
+  } finally {
+    setToken(null)
+    setApiUser(null)
   }
 }
 
-export function currentUser(): User | null {
-  if (apiEnabled) return apiUserAsDomain()
-  const db = getDb()
-  return db.users.find((u) => u.id === db.session.userId) ?? null
+/** Utilisateur connecté (source unique : la réponse de l'API, conservée dans le navigateur) et déconnexion. */
+export function useAuth() {
+  const apiUser = useSyncExternalStore(subscribeApiUser, getApiUser)
+  const user = useMemo(() => toDomainUser(apiUser), [apiUser])
+  return { user, logout }
 }
 
 export const homeFor = (role: Role) => `/${role}/dashboard`

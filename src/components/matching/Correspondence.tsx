@@ -4,7 +4,7 @@ import type { Offer } from '@/domain/types'
 import { fmtDate, fmtT } from '@/components/shared/ui-bits'
 
 /** « Correspondance trouvée » (CDC §10) : une offre et le nombre de demandes compatibles. */
-export function Correspondence({ offer, count, action }: { offer: Offer; count: number; action?: ReactNode }) {
+export function Correspondence({ offer, count, action }: { offer: Pick<Offer, 'from' | 'to' | 'date' | 'totalCapacityT' | 'availableT'>; count: number; action?: ReactNode }) {
   return (
     <div className="flex flex-col gap-3 rounded-card border border-success/30 bg-success-soft/60 p-4 sm:flex-row sm:items-center">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-success text-white"><Sparkles className="h-5 w-5" aria-hidden="true" /></span>

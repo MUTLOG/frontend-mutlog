@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Printer } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatusBadge } from '@/components/tracking/StatusBadge'
 import { StatusStepper } from '@/components/tracking/StatusStepper'
-import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, Modal, Notice, PaymentBadge, ReservationBadge, StarInput, Stars, useFlash } from '@/components/shared/ui-bits'
+import { BreakdownNotice, DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, Modal, Notice, PaymentBadge, ReservationBadge, StarInput, Stars, useFlash } from '@/components/shared/ui-bits'
 import RouteMap from '@/features/maps/RouteMap'
 import { useAuth } from '@/features/auth/useAuth'
 import { formatPhone } from '@/domain/phone'
@@ -57,7 +58,7 @@ export function ClientShipmentsPage() {
             { header: 'Trajet', cell: (s) => `${s.offer.from} → ${s.offer.to}` },
             { header: 'Départ', cell: (s) => fmtDate(s.offer.date) },
             { header: 'Ma part', cell: (s) => (s.share ? formatFCFA(s.share.payable) : '—') },
-            { header: 'Statut', cell: (s) => <StatusBadge status={s.status} /> },
+            { header: 'Statut', cell: (s) => <span className="flex flex-wrap items-center justify-end gap-1.5"><StatusBadge status={s.status} />{s.breakdown && <Badge tone="danger">Panne signalée</Badge>}</span> },
           ]} />
       )}
     </>
@@ -72,7 +73,7 @@ export function ShipmentDetailPage() {
   const [payFor, setPayFor] = useState<AdminPayment | null>(null)
   const [busy, setBusy] = useState(false)
   const shipment = useResource(() => clientApi.shipment(id!), null as ClientShipment | null, [id])
-  const given = useResource(() => sharedApi.reviews('?scope=given'), NO_REVIEWS)
+  const given = useResource(() => sharedApi.reviews('?scope=given&per_page=100'), NO_REVIEWS)
   const s = shipment.data
 
   if (!shipment.loaded) return <p className="text-sm text-muted" role="status">Chargement…</p>
@@ -119,6 +120,7 @@ export function ShipmentDetailPage() {
       <PageHeader title={`${s.offer.from} → ${s.offer.to}`} description={`Opération ${s.ref} · départ le ${fmtDate(s.offer.date)}`} action={<StatusBadge status={s.status} />} />
       <div className="space-y-6">
         {flash.node}
+        {s.breakdown && <BreakdownNotice breakdown={s.breakdown} />}
         <Card className="p-5"><StatusStepper status={s.status} /></Card>
 
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -151,7 +153,7 @@ export function ShipmentDetailPage() {
               <h2 className="text-base font-semibold text-ink">Transporteur</h2>
               <p className="mt-2 font-medium text-ink">{carrier?.displayName ?? '—'}</p>
               {confirmedPhone && <p className="text-muted">Téléphone : {formatPhone(s.carrierPhone as string)}</p>}
-              {carrier && <Button asChild variant="outline" size="sm" className="mt-3"><Link to={`/client/messages?avec=${carrier.id}&transport=${s.id}`}>Envoyer un message</Link></Button>}
+              {carrier && <Button asChild variant="outline" size="sm" className="mt-3"><Link to={`/client/messages?avec=${carrier.id}&transport=${s.id}`} state={{ name: carrier.displayName }}>Envoyer un message</Link></Button>}
             </Card>
 
             {s.status === 'livree' && (

@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, CalendarCheck, FileText, Leaf, Route as RouteIcon, ShieldCheck, Truck, Wallet } from 'lucide-react'
 import { useTitle } from '@/hooks/useTitle'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import truckImage from '@/assets/mutlog_truck.png'
-import { apiEnabled } from '@/services/api'
 import { publicApi, type RemoteOffer } from '@/services/mutlogApi'
-import type { GoodsType, Offer } from '@/domain/types'
-import { useDb } from '@/store/store'
-import { searchOffers } from '@/domain/matching'
-import { today } from '@/store/logic'
+import type { GoodsType } from '@/domain/types'
+import { useResource } from '@/hooks/useResource'
 import { fmtDate, fmtT, GOODS_LABEL, offerPriceLabel } from '@/components/shared/ui-bits'
 
 const advantages = [
@@ -33,26 +29,13 @@ const audiences = [
   ['Transporteurs', 'Valorisez la capacité libre de vos camions et réduisez les trajets à vide.'],
 ]
 
+const NO_OFFERS: RemoteOffer[] = []
+
 export default function HomePage() {
   useTitle()
-  const db = useDb()
-  const [remoteOffers, setRemoteOffers] = useState<Offer[]>([])
-  useEffect(() => {
-    if (!apiEnabled) return
-    let cancelled = false
-    publicApi.offers({ sort: 'date' }).then((items) => {
-      if (cancelled) return
-      setRemoteOffers(items.slice(0, 3).map((offer: RemoteOffer) => ({
-        id: String(offer.id), transporterId: String(offer.transporter?.id ?? ''), vehicleId: '',
-        from: offer.from, to: offer.to, date: offer.date, totalCapacityT: Number(offer.totalCapacityT),
-        availableT: Number(offer.availableT), goodsAccepted: (offer.goodsAccepted ?? []) as GoodsType[],
-        pricingMode: offer.pricingMode, price: Number(offer.price), notes: offer.notes,
-        status: (offer.status === 'ouverte' ? 'ouverte' : offer.status === 'complete' ? 'complete' : 'terminee') as Offer['status'], createdAt: '',
-      })))
-    }).catch(() => { if (!cancelled) setRemoteOffers([]) })
-    return () => { cancelled = true }
-  }, [])
-  const offers = (apiEnabled ? remoteOffers : searchOffers(db.offers, {}, db.settings, today(), (id) => db.users.find((u) => u.id === id)?.status === 'actif')).slice(0, 3)
+  // Si l'API est indisponible, la page d'accueil reste utilisable : la section « Transports disponibles » est simplement masquée.
+  const available = useResource(() => publicApi.offers({ sort: 'date' }), NO_OFFERS)
+  const offers = available.error ? NO_OFFERS : available.data.slice(0, 3)
   return (
     <>
       <section
@@ -124,7 +107,7 @@ export default function HomePage() {
                   <Link to={`/transports/${o.id}`} className="block h-full">
                     <Card className="h-full p-5 transition-shadow hover:shadow-pop">
                       <p className="text-lg font-bold text-ink">{o.from} → {o.to}</p>
-                      <p className="mt-1 text-sm text-muted">{fmtDate(o.date)} · {GOODS_LABEL[o.goodsAccepted[0]]}</p>
+                      <p className="mt-1 text-sm text-muted">{fmtDate(o.date)} · {GOODS_LABEL[o.goodsAccepted[0] as GoodsType] ?? o.goodsAccepted[0]}</p>
                       <p className="mt-3 text-sm text-ink">Disponible : <strong>{fmtT(o.availableT)}</strong></p>
                       <p className="mt-3 text-xl font-bold text-primary">{p.amount} <span className="text-xs font-medium text-muted">{p.unit}</span></p>
                     </Card>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatFCFA, today, userName } from './format'
+import { formatFCFA, monthLabel, today, userName } from './format'
 
 describe('helpers de format', () => {
   it('userName : raison sociale, sinon prénom + nom, sinon tiret', () => {
@@ -13,5 +13,9 @@ describe('helpers de format', () => {
   })
   it('formatFCFA : séparateur de milliers insécable', () => {
     expect(formatFCFA(350000)).toBe('350\u202F000\u00A0FCFA')
+  })
+  it('monthLabel : mois abrégé en français, sans point', () => {
+    expect(monthLabel('2026-10')).toBe('oct')
+    expect(monthLabel('2026-12')).toBe('déc')
   })
 })

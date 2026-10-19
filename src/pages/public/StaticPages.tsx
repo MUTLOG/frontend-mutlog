@@ -24,14 +24,13 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTitle } from '@/hooks/useTitle'
-import { apiEnabled } from '@/services/api'
-import { contactApi } from '@/services/mutlogApi'
+import { errorMessage } from '@/services/api'
+import { contactApi, EMPTY_PUBLIC_SETTINGS, publicApi } from '@/services/mutlogApi'
+import { useResource } from '@/hooks/useResource'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { Notice } from '@/components/shared/ui-bits'
-import { run, useDb } from '@/store/store'
-import * as L from '@/store/logic'
 import { LEGAL, isSet } from '@/features/legal/config'
 
 function Page({
@@ -336,38 +335,13 @@ export function ContactPage() {
       return
     }
 
-    // Site en production sans API : le message ne pourrait jamais atteindre l'administrateur.
-    // On le dit au visiteur plutôt que d'afficher un faux succès.
-    if (!apiEnabled && import.meta.env.PROD) {
-      setError('Le service de messagerie est momentanément indisponible. Merci de réessayer plus tard.')
-      return
-    }
-
     setBusy(true)
     try {
       const fullMessage = `Objet : ${form.subject}\n\n${message}`
-      if (apiEnabled) {
-        await contactApi.send({ name, phone: form.phone.trim() || undefined, message: fullMessage, website: form.website })
-      } else {
-        // Mode démonstration conservé lorsque l’API n’est pas configurée.
-        run((db) => {
-          db.users
-            .filter((user) => user.role === 'admin')
-            .forEach((admin) =>
-              L.notify(
-                db,
-                admin.id,
-                'Message de contact',
-                `[${form.subject}] ${name} (${form.phone || 'sans téléphone'}) : ${message.slice(0, 120)}`,
-                '/admin/notifications',
-              ),
-            )
-          return { ok: true as const, value: undefined }
-        })
-      }
+      await contactApi.send({ name, phone: form.phone.trim() || undefined, message: fullMessage, website: form.website })
       setSent(true)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Le message n’a pas pu être envoyé. Réessayez.')
+      setError(errorMessage(cause, 'Le message n’a pas pu être envoyé. Réessayez.'))
     } finally {
       setBusy(false)
     }
@@ -773,8 +747,7 @@ export function HowItWorksPage() {
 }
 
 export function TermsPage() {
-  const db = useDb()
-  const settings = db.settings
+  const settings = useResource(() => publicApi.settings(), EMPTY_PUBLIC_SETTINGS).data
 
   return (
     <Page
@@ -786,7 +759,7 @@ export function TermsPage() {
         <section>
           <h2 className="font-bold text-ink">Commission MUTLOG</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            La commission configurée est de {settings.commissionPct} %.
+            {settings.commissionPct > 0 ? `La commission configurée est de ${settings.commissionPct} %. ` : ''}
             Le montant applicable doit être présenté avant confirmation de l’opération.
           </p>
         </section>
