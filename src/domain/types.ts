@@ -1,4 +1,10 @@
 /** Listes de valeurs partagées par les formulaires et les badges (les données elles-mêmes viennent de l'API : voir @/types/remote). */
+import type { OperationStatus } from '@/types/operation'
+
+export type { OperationStatus } from '@/types/operation'
+
+export type Role = 'client' | 'transporteur' | 'admin'
+export type AccountStatus = 'actif' | 'en_attente' | 'suspendu'
 
 /** Types d'utilisateur : CDC §4 (cibles) et §7.1 (« type d'utilisateur »). */
 export type UserType =
@@ -142,3 +148,16 @@ export interface Transport {
 }
 
 export type PaymentStatus = 'en_attente' | 'confirme' | 'echoue' | 'rembourse'
+
+export interface Payment {
+  status: PaymentStatus
+}
+
+export interface Settings {
+  commissionPct: number
+  commissionBearer: 'transporteur' | 'clients'
+  shareBasis: 'poids' | 'volume'
+  cityRadiusKm: number
+  dateToleranceDays: number
+  paymentInstructions: string
+}
