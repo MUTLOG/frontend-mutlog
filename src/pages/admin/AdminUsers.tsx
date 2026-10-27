@@ -6,6 +6,7 @@ import { Field, Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ask } from '@/components/shared/confirm'
 import { DataTable, EmptyState, fmtDate, fmtT, Modal, Notice, Stars, useFlash } from '@/components/shared/ui-bits'
+import { CallButton } from '@/features/calls/CallButton'
 import { useAuth } from '@/features/auth/useAuth'
 import type { ApiUser } from '@/services/api'
 import { adminApi } from '@/services/mutlogApi'
@@ -61,7 +62,7 @@ export function UsersPage({ only }: { only?: Role }) {
       <PageHeader title={title} description={only === 'transporteur' ? 'Vérifiez les informations, consultez les véhicules, validez ou suspendez.' : undefined} action={<Button onClick={() => setCreate(true)}>Créer un compte</Button>} />
       <div className="space-y-4">
         {flash.node}
-        {remote.error && <Notice tone="danger">{remote.error}</Notice>}
+        {remote.error && <Notice tone="danger"><span>{remote.error}</span> <Button size="sm" variant="outline" onClick={remote.reload}>Réessayer</Button></Notice>}
         <Input aria-label="Rechercher" placeholder="Rechercher un nom, un téléphone, une ville" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-sm" />
         {remote.loading && <Card className="p-6 text-center text-sm text-muted">Chargement des utilisateurs…</Card>}
         <DataTable rows={remote.data} rowKey={(u) => String(u.id)} empty={<EmptyState title="Aucun utilisateur" />} columns={[
@@ -135,6 +136,7 @@ function UserDetailApiModal({ user, onClose, onStatus }: { user: ApiUser; onClos
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           {([['Profil', USER_TYPES[details.userType] ?? details.role], ['Téléphone', formatPhone(details.phone)], ['E-mail', details.email ?? '—'], ['Ville', details.city], ['Adresse', details.address], ['Inscrit le', details.createdAt ? fmtDate(details.createdAt) : '—'], ...(details.role === 'transporteur' ? [['N° d’identification (IFU)', details.idNumber ?? 'Non renseigné']] : [])] as [string, string][]).map(([key, value]) => <div key={key}><dt className="text-xs text-muted">{key}</dt><dd className="font-medium text-ink">{value}</dd></div>)}
         </dl>
+        {user.status === 'actif' && user.role !== 'admin' && <div className="mt-4"><CallButton peer={{ id: user.id, displayName: name, role: user.role }} label="Appeler dans l'application" /></div>}
         {details.rating && <p className="mt-3 flex items-center gap-2 text-sm"><Stars value={details.rating.avg} /> {details.rating.avg.toFixed(1)} ({details.rating.count} avis)</p>}
         {details.role === 'transporteur' && <>
           <h3 className="mt-5 text-sm font-semibold text-ink">Documents</h3>

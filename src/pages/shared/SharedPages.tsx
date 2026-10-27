@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { DataTable, EmptyState, fmtDate, fmtDateTime, GOODS_LABEL, Notice, RequestStatusBadge, Stars, Tabs, useFlash } from '@/components/shared/ui-bits'
 import { StatusBadge } from '@/components/tracking/StatusBadge'
 import { useAuth } from '@/features/auth/useAuth'
+import { CallButton } from '@/features/calls/CallButton'
 import { useNotifications } from '@/features/notifications/useNotifications'
 import { errorMessage, setApiUser, type ApiUser } from '@/services/api'
 import {
@@ -21,7 +22,7 @@ import type { OperationStatus } from '@/types/operation'
 import { useResource } from '@/hooks/useResource'
 
 const loading = <p className="text-sm text-muted" role="status">Chargement…</p>
-const failure = (message: string) => (message ? <div className="mb-4"><Notice tone="danger">{message}</Notice></div> : null)
+const failure = (message: string, onRetry?: () => void) => (message ? <div className="mb-4"><Notice tone="danger">{message}{onRetry && <Button variant="outline" size="sm" className="ml-3" onClick={onRetry}>Réessayer</Button>}</Notice></div> : null)
 const NO_PEERS: MessagePeer[] = []
 const NO_MESSAGES: ThreadMessage[] = []
 const NO_REVIEWS: AdminReview[] = []
@@ -102,7 +103,7 @@ export function MessagesPage() {
     <>
       <PageHeader title="Messages" description="Échangez avec vos interlocuteurs sur vos opérations." />
       {flash.node}
-      {failure(peers.error)}
+      {failure(peers.error, peers.reload)}
       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
         <Card className={withId ? 'hidden md:block' : ''}>
           {!peers.loaded ? <p className="px-4 py-6 text-sm text-muted" role="status">Chargement…</p> : list.length === 0 ? <EmptyState title="Aucune conversation" text="Utilisez « Contacter le transporteur » depuis une fiche transport." /> : (
@@ -112,9 +113,9 @@ export function MessagesPage() {
         <Card className={`flex min-h-[360px] flex-col ${withId ? '' : 'hidden md:flex'}`}>
           {withId ? (
             <>
-              <div className="flex items-center justify-between border-b border-line px-4 py-3"><p className="font-semibold text-ink">{nameOf(withId)}</p><Button variant="ghost" size="sm" className="md:hidden" onClick={() => setWithId('')}>Retour</Button></div>
+              <div className="flex items-center justify-between border-b border-line px-4 py-3"><p className="font-semibold text-ink">{nameOf(withId)}</p><div className="flex items-center gap-2"><CallButton peer={{ id: withId, displayName: nameOf(withId) }} /><Button variant="ghost" size="sm" className="md:hidden" onClick={() => setWithId('')}>Retour</Button></div></div>
               <div className="flex-1 space-y-2 overflow-y-auto p-4" aria-live="polite">
-                {failure(thread.error)}
+                {failure(thread.error, thread.reload)}
                 {thread.loaded && thread.data.length === 0 && <p className="text-center text-sm text-muted">Écrivez votre premier message.</p>}
                 {thread.data.map((m) => <div key={m.id} className={`flex ${String(m.fromId) === String(me.id) ? 'justify-end' : ''}`}><p className={`max-w-[80%] rounded-card px-3.5 py-2 text-sm ${String(m.fromId) === String(me.id) ? 'bg-primary text-white' : 'bg-primary-soft text-ink'}`}>{m.text}<span className="mt-1 block text-[10px] opacity-70">{fmtDateTime(m.createdAt)}</span></p></div>)}
                 <div ref={end} />
@@ -192,7 +193,7 @@ export function ProfilePage() {
       <PageHeader title="Mon profil" description={carrier ? 'Informations de votre entreprise ou de votre activité.' : 'Vos informations personnelles.'} action={carrier ? <Badge tone={tone}>{label}</Badge> : undefined} />
       <div className="max-w-3xl space-y-6">
         {flash.node}
-        {failure(remote.error)}
+        {failure(remote.error, remote.reload)}
         {!remote.loaded ? loading : me && <>
           <form onSubmit={(event) => void save(event)} noValidate><Card className="space-y-4 p-5 sm:p-6">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -264,7 +265,7 @@ function HistoryRequests() {
   const requests = useResource(() => clientApi.requests('?per_page=100'), NO_REQUESTS)
   const rows = useMemo(() => [...requests.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [requests.data])
   if (!requests.loaded) return loading
-  return <>{failure(requests.error)}<DataTable rows={rows} rowKey={(r) => String(r.id)} columns={[
+  return <>{failure(requests.error, requests.reload)}<DataTable rows={rows} rowKey={(r) => String(r.id)} columns={[
     { header: 'Trajet', cell: (r) => <Link className="font-semibold text-primary-2 hover:underline" to={`/client/demandes/${r.id}`}>{r.from} → {r.to}</Link> },
     { header: 'Date', cell: (r) => fmtDate(r.date) }, { header: 'Marchandise', cell: (r) => GOODS_LABEL[r.goods] }, { header: 'Statut', cell: (r) => <RequestStatusBadge status={r.status} /> },
   ]} /></>
@@ -274,7 +275,7 @@ function HistoryOffers() {
   const offers = useResource(() => carrierApi.offers(), NO_OFFERS)
   const rows = useMemo(() => [...offers.data].sort((a, b) => b.date.localeCompare(a.date)), [offers.data])
   if (!offers.loaded) return loading
-  return <>{failure(offers.error)}<DataTable rows={rows} rowKey={(o) => String(o.id)} columns={[
+  return <>{failure(offers.error, offers.reload)}<DataTable rows={rows} rowKey={(o) => String(o.id)} columns={[
     { header: 'Trajet', cell: (o) => `${o.from} → ${o.to}` }, { header: 'Date', cell: (o) => fmtDate(o.date) }, { header: 'Capacité', cell: (o) => `${o.totalCapacityT} t` },
     { header: 'Statut', cell: (o) => <Badge tone={o.status === 'annulee' ? 'danger' : o.status === 'ouverte' ? 'success' : 'neutral'}>{o.status}</Badge> },
   ]} /></>
@@ -285,7 +286,7 @@ function HistoryTransports({ carrier }: { carrier: boolean }) {
   const transports = useResource(() => (carrier ? carrierApi.transports() : Promise.resolve(NO_TRANSPORTS)), NO_TRANSPORTS, [carrier])
   const rows: Array<{ id: string; ref: string; offer: RemoteOffer; status: string }> = (carrier ? transports.data : shipments.data).map((t) => ({ id: String(t.id), ref: t.ref, offer: t.offer, status: t.status }))
   if (!(carrier ? transports.loaded : shipments.loaded)) return loading
-  return <>{failure(shipments.error || transports.error)}<DataTable rows={rows} rowKey={(v) => v.id} columns={[
+  return <>{failure(shipments.error || transports.error, () => { shipments.reload(); transports.reload() })}<DataTable rows={rows} rowKey={(v) => v.id} columns={[
     { header: 'Opération', cell: (v) => v.ref }, { header: 'Trajet', cell: (v) => `${v.offer.from} → ${v.offer.to}` },
     { header: 'Date', cell: (v) => fmtDate(v.offer.date) }, { header: 'Statut', cell: (v) => <StatusBadge status={v.status as OperationStatus} /> },
   ]} /></>
@@ -297,13 +298,13 @@ function HistoryPayments({ carrier }: { carrier: boolean }) {
   if (!(carrier ? transports.loaded : shipments.loaded)) return loading
   if (carrier) {
     const rows = transports.data.filter((t) => t.finance && t.status !== 'annule')
-    return <>{failure(transports.error)}<DataTable rows={rows} rowKey={(t) => String(t.id)} columns={[
+    return <>{failure(transports.error, transports.reload)}<DataTable rows={rows} rowKey={(t) => String(t.id)} columns={[
       { header: 'Opération', cell: (t) => t.ref }, { header: 'Montant brut', cell: (t) => formatFCFA(t.finance!.gross) },
       { header: 'Commission', cell: (t) => `${formatFCFA(t.finance!.commission)} (${t.finance!.ratePct} %)` }, { header: 'Net', cell: (t) => <strong>{formatFCFA(t.finance!.netCarrier)}</strong> },
     ]} /></>
   }
   const rows = shipments.data.flatMap((s) => (s.payment ? [{ payment: s.payment, ref: s.ref }] : []))
-  return <>{failure(shipments.error)}<DataTable rows={rows} rowKey={(x) => String(x.payment.id)} columns={[
+  return <>{failure(shipments.error, shipments.reload)}<DataTable rows={rows} rowKey={(x) => String(x.payment.id)} columns={[
     { header: 'Reçu', cell: (x) => x.payment.receiptNo ?? '—' }, { header: 'Opération', cell: (x) => x.ref },
     { header: 'Montant', cell: (x) => formatFCFA(x.payment.amount) }, { header: 'Date', cell: (x) => fmtDate(x.payment.confirmedAt ?? x.payment.createdAt ?? '') },
   ]} /></>
@@ -315,7 +316,7 @@ function HistoryReviews() {
   const given = useResource(() => sharedApi.reviews('?scope=given&per_page=100'), NO_REVIEWS)
   const rows = useMemo(() => [...received.data, ...given.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [received.data, given.data])
   if (!received.loaded || !given.loaded) return loading
-  return <>{failure(received.error || given.error)}<DataTable rows={rows} rowKey={(r) => String(r.id)} columns={[
+  return <>{failure(received.error || given.error, () => { received.reload(); given.reload() })}<DataTable rows={rows} rowKey={(r) => String(r.id)} columns={[
     { header: 'Note', cell: (r) => <Stars value={r.rating} size={14} /> },
     { header: 'Sens', cell: (r) => (String(r.fromId) === String(user!.id) ? `Donnée à ${r.target?.displayName ?? '—'}` : `Reçue de ${r.author?.displayName ?? '—'}`) },
     { header: 'Commentaire', cell: (r) => r.comment ?? '—' }, { header: 'Date', cell: (r) => fmtDate(r.createdAt) },
@@ -388,7 +389,7 @@ export function EvaluationsPage() {
       <PageHeader title={carrier ? 'Avis' : 'Évaluations'} description={avg ? `Note moyenne : ${avg.avg.toFixed(1)} / 5 (${avg.count} avis)` : 'Aucun avis reçu pour le moment.'} />
       <div className="space-y-6">
         {flash.node}
-        {failure(received.error || given.error || shipments.error || transports.error)}
+        {failure(received.error || given.error || shipments.error || transports.error, () => { received.reload(); given.reload(); shipments.reload(); transports.reload() })}
         {!ready ? loading : <>
           {todo.length > 0 && (
             <Card className="p-5">

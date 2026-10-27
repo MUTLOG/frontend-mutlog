@@ -15,6 +15,7 @@ import { DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, GOODS_LABEL, GOODS_O
 import RouteMap from '@/features/maps/RouteMap'
 import { ask } from '@/components/shared/confirm'
 import { useAuth } from '@/features/auth/useAuth'
+import { CallButton } from '@/features/calls/CallButton'
 import { errorMessage, type ApiUser } from '@/services/api'
 import {
   adminApi, carrierApi, EMPTY_PUBLIC_SETTINGS, publicApi, sharedApi,
@@ -36,7 +37,7 @@ const NO_OWNERS: ApiUser[] = []
 const NO_REVENUE: CarrierRevenue = { netReceived: 0, netPending: 0, commissionPaid: 0, monthly: [] }
 const OFFER_STATUS = { ouverte: 'Actif', complete: 'Complet', annulee: 'Annulé', terminee: 'Terminé' } as Record<string, string>
 const loading = <p className="text-sm text-muted" role="status">Chargement…</p>
-const failure = (message: string) => (message ? <div className="mb-4"><Notice tone="danger">{message}</Notice></div> : null)
+const failure = (message: string, onRetry?: () => void) => (message ? <div className="mb-4"><Notice tone="danger">{message}</Notice>{onRetry && <Button variant="outline" className="mt-2" onClick={onRetry}>Réessayer</Button>}</div> : null)
 
 export function CarrierOffersPage() {
   const offers = useResource(() => carrierApi.offers(), NO_OFFERS)
@@ -44,7 +45,7 @@ export function CarrierOffersPage() {
   return (
     <>
       <PageHeader title="Mes trajets" description="Vos offres de transport publiées." action={<Button asChild size="lg"><Link to="/transporteur/trajets/nouveau"><Plus className="h-4 w-4" /> Publier un trajet</Link></Button>} />
-      {failure(offers.error)}
+      {failure(offers.error, offers.reload)}
       {!offers.loaded ? loading : (
         <DataTable rows={rows} rowKey={(o) => String(o.id)} empty={<EmptyState title="Aucun trajet publié" />}
           columns={[
@@ -66,7 +67,7 @@ export function NewOfferPage() {
   if (user!.status !== 'actif') return <><PageHeader title="Publier un trajet" /><Notice tone="warning">Votre compte doit être validé par MUTLOG avant de publier un trajet.</Notice></>
   if (!vehicles.loaded) return <><PageHeader title="Publier un trajet" />{loading}</>
   const usable = vehicles.data.filter((v) => v.active)
-  if (vehicles.error) return <><PageHeader title="Publier un trajet" />{failure(vehicles.error)}</>
+  if (vehicles.error) return <><PageHeader title="Publier un trajet" />{failure(vehicles.error, vehicles.reload)}</>
   if (!usable.length) return <><PageHeader title="Publier un trajet" /><Notice tone="warning">Enregistrez d'abord un véhicule. <Link to="/transporteur/vehicules" className="underline">Ajouter un véhicule</Link></Notice></>
   return <NewOfferForm vehicles={usable} city={user!.city} commissionPct={settings.data.commissionPct} bearer={settings.data.commissionBearer} />
 }
@@ -200,7 +201,7 @@ export function ReceivedRequestsPage() {
       <PageHeader title="Demandes reçues" description="Acceptez ou refusez les regroupements validés par MUTLOG." />
       <div className="space-y-6">
         {flash.node}
-        {failure(poolings.error || reservations.error)}
+        {failure(poolings.error || reservations.error, () => { poolings.reload(); reservations.reload() })}
         {!poolings.loaded ? loading : poolings.data.length === 0 ? <Card><EmptyState title="Aucun regroupement à confirmer" text="Vous serez notifié dès que MUTLOG validera un regroupement sur l'un de vos trajets." /></Card> : poolings.data.map((p) => p.offer && (
           <PoolingCard key={p.id} offer={p.offer} vehicleLabel={p.offer.vehicle?.type} finance={p.finance} status={<Badge tone="pending">À confirmer</Badge>}
             rows={p.shares.map((s) => ({ key: String(s.requestId), label: s.clientName ?? 'Client', weightT: s.weightT, payable: s.amount }))}
@@ -244,7 +245,7 @@ export function CarrierReservationsPage() {
   return (
     <>
       <PageHeader title="Mes réservations" />
-      {failure(reservations.error)}
+      {failure(reservations.error, reservations.reload)}
       {!reservations.loaded ? loading : (
         <DataTable rows={rows} rowKey={(r) => String(r.id)} empty={<EmptyState title="Aucune réservation" />} columns={[
           { header: 'Trajet', cell: (r) => <span className="font-semibold">{r.offer?.from} → {r.offer?.to}</span> },
@@ -292,7 +293,7 @@ export function VehiclesPage({ adminView = false }: { adminView?: boolean }) {
     <>
       <PageHeader title={adminView ? 'Véhicules' : 'Mes véhicules'} description="Type, capacité et disponibilité." action={<Button size="lg" onClick={() => setEdit({ goodsAccepted: ['generales'], available: true, active: true })}><Plus className="h-4 w-4" /> Ajouter un véhicule</Button>} />
       {flash.node}
-      {failure(vehicles.error || owners.error)}
+      {failure(vehicles.error || owners.error, () => { vehicles.reload(); owners.reload() })}
       {!vehicles.loaded ? loading : (
         <DataTable rows={vehicles.data} rowKey={(v) => String(v.id)} empty={<EmptyState title="Aucun véhicule" />} columns={[
           { header: 'Véhicule', cell: (v) => <span><strong>{v.type}</strong><br /><span className="text-xs text-muted">{v.brand} · {v.plate}</span></span> },
@@ -383,7 +384,7 @@ export function CarrierTransportsPage() {
       <PageHeader title="Mes transports" description="Mettez à jour le statut et la position de vos transports confirmés." />
       <div className="space-y-4">
         {flash.node}
-        {failure(transports.error)}
+        {failure(transports.error, transports.reload)}
         {!transports.loaded ? loading : transports.data.length === 0 && <Card><EmptyState title="Aucun transport confirmé" /></Card>}
         {transports.data.map((t) => {
           const clients = t.clients ?? []
@@ -397,6 +398,9 @@ export function CarrierTransportsPage() {
               <div className="mt-4"><StatusStepper status={t.status as OperationStatus} /></div>
               {t.breakdown && <div className="mt-4"><Notice tone="warning"><AlertTriangle className="mr-1 inline h-4 w-4" aria-hidden="true" />{BREAKDOWN_LABEL[t.breakdown.kind] ?? 'Incident'} signalé à {t.breakdown.location} — {t.breakdown.status === 'prise_en_charge' ? 'pris en charge par MUTLOG' : 'en attente de prise en charge'}. Les clients du transport sont informés.</Notice></div>}
               {unpaid > 0 && !['terminee', 'annule'].includes(t.status) && <div className="mt-4"><Notice tone="warning">{unpaid} paiement(s) client non confirmé(s) par MUTLOG.</Notice></div>}
+              {clients.length > 0 && !['terminee', 'annule'].includes(t.status) && (
+                <div className="mt-4 flex flex-wrap items-center gap-2"><span className="text-xs text-muted">Appeler un client :</span>{clients.map((c) => <CallButton key={String(c.clientId)} peer={{ id: c.clientId, displayName: c.name, role: 'client' }} label={c.name} />)}</div>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {t.status === 'confirmee' && <Button disabled={busy} onClick={() => step(t, 'en_cours')}>Démarrer le transport</Button>}
                 {t.status === 'en_cours' && <Button disabled={busy} onClick={() => step(t, 'arrive_destination')}>Arrivé à destination</Button>}
@@ -437,7 +441,7 @@ export function RevenuePage() {
     <>
       <PageHeader title="Revenus" description="Revenus nets après commission MUTLOG." />
       <div className="space-y-6">
-        {failure(transports.error || revenue.error)}
+        {failure(transports.error || revenue.error, () => { transports.reload(); revenue.reload() })}
         <div className="grid gap-4 sm:grid-cols-3">
           {totals.map(([l, v]) => <Card key={l} className="p-5"><p className="text-xs text-muted">{l}</p><p className="mt-1 text-2xl font-bold text-ink">{revenue.loaded ? formatFCFA(v) : '—'}</p></Card>)}
         </div>
@@ -462,7 +466,7 @@ export function CarrierPaymentsPage() {
   return (
     <>
       <PageHeader title="Mes paiements" description="Paiements des clients sur vos transports (vérifiés par MUTLOG)." />
-      {failure(transports.error)}
+      {failure(transports.error, transports.reload)}
       {!transports.loaded ? loading : (
         <DataTable rows={rows} rowKey={(x) => String(x.payment.id)} empty={<EmptyState title="Aucun paiement" />} columns={[
           { header: 'Opération', cell: (x) => x.ref }, { header: 'Client', cell: (x) => x.client },

@@ -11,6 +11,7 @@ import { StatusStepper } from '@/components/tracking/StatusStepper'
 import { BreakdownNotice, DataTable, EmptyState, fmtDate, fmtDateTime, fmtT, Modal, Notice, PaymentBadge, ReservationBadge, StarInput, Stars, useFlash } from '@/components/shared/ui-bits'
 import RouteMap from '@/features/maps/RouteMap'
 import { useAuth } from '@/features/auth/useAuth'
+import { CallButton } from '@/features/calls/CallButton'
 import { formatPhone } from '@/domain/phone'
 import { formatFCFA, userName } from '@/lib/format'
 import { useResource } from '@/hooks/useResource'
@@ -24,13 +25,17 @@ const NO_RESERVATIONS: ClientReservation[] = []
 const NO_SHIPMENTS: ClientShipment[] = []
 const NO_REVIEWS: AdminReview[] = []
 
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <Notice tone="danger"><span>{message}</span> <Button size="sm" variant="outline" onClick={onRetry}>Réessayer</Button></Notice>
+}
+
 export function ClientReservationsPage() {
   const reservations = useResource(() => clientApi.reservations(), NO_RESERVATIONS)
   const rows = useMemo(() => [...reservations.data].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')), [reservations.data])
   return (
     <>
       <PageHeader title="Mes réservations" description="Une réservation est une demande envoyée à un transport : elle est regroupée par MUTLOG, puis confirmée par le transporteur." />
-      {reservations.error && <div className="mb-4"><Notice tone="danger">{reservations.error}</Notice></div>}
+      {reservations.error && <div className="mb-4"><LoadError message={reservations.error} onRetry={reservations.reload} /></div>}
       {!reservations.loaded ? <p className="text-sm text-muted" role="status">Chargement…</p> : (
         <DataTable rows={rows} rowKey={(r) => String(r.id)} empty={<EmptyState title="Aucune réservation" text="Réservez un transport depuis les résultats de recherche." action={<Button asChild><Link to="/rechercher">Trouver un transport</Link></Button>} />}
           columns={[
@@ -50,7 +55,7 @@ export function ClientShipmentsPage() {
   return (
     <>
       <PageHeader title="Mes expéditions" description="Vos transports confirmés, en cours et terminés." />
-      {shipments.error && <div className="mb-4"><Notice tone="danger">{shipments.error}</Notice></div>}
+      {shipments.error && <div className="mb-4"><LoadError message={shipments.error} onRetry={shipments.reload} /></div>}
       {!shipments.loaded ? <p className="text-sm text-muted" role="status">Chargement…</p> : (
         <DataTable rows={shipments.data} rowKey={(s) => String(s.id)} empty={<EmptyState title="Aucune expédition" text="Elles apparaîtront dès qu'un transport est confirmé." />}
           columns={[
@@ -153,7 +158,7 @@ export function ShipmentDetailPage() {
               <h2 className="text-base font-semibold text-ink">Transporteur</h2>
               <p className="mt-2 font-medium text-ink">{carrier?.displayName ?? '—'}</p>
               {confirmedPhone && <p className="text-muted">Téléphone : {formatPhone(s.carrierPhone as string)}</p>}
-              {carrier && <Button asChild variant="outline" size="sm" className="mt-3"><Link to={`/client/messages?avec=${carrier.id}&transport=${s.id}`} state={{ name: carrier.displayName }}>Envoyer un message</Link></Button>}
+              {carrier && <div className="mt-3 flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><Link to={`/client/messages?avec=${carrier.id}&transport=${s.id}`} state={{ name: carrier.displayName }}>Envoyer un message</Link></Button>{s.status !== 'annule' && <CallButton peer={{ id: carrier.id, displayName: carrier.displayName ?? 'Transporteur', role: 'transporteur' }} />}</div>}
             </Card>
 
             {s.status === 'livree' && (
@@ -233,7 +238,7 @@ export function ClientPaymentsPage() {
     <>
       <PageHeader title="Mes paiements" description="Paiements à effectuer, historique et reçus." />
       {flash.node}
-      {shipments.error && <div className="mb-4"><Notice tone="danger">{shipments.error}</Notice></div>}
+      {shipments.error && <div className="mb-4"><LoadError message={shipments.error} onRetry={shipments.reload} /></div>}
       {!shipments.loaded ? <p className="text-sm text-muted" role="status">Chargement…</p> : (
         <DataTable rows={rows} rowKey={(x) => String(x.payment.id)} empty={<EmptyState title="Aucun paiement" text="Un paiement est créé à la confirmation de votre transport." />}
           columns={[

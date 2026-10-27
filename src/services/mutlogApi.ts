@@ -1,5 +1,5 @@
 /** Couche d'accès centralisée aux routes décrites dans api-endpoints.md. */
-import { api, apiData, toSnake } from './api'
+import { api, apiData, API_BASE_URL, getToken, toSnake } from './api'
 import type { GoodsType } from '@/domain/types'
 import type { OperationStatus } from '@/types/operation'
 
@@ -244,4 +244,35 @@ export const sharedApi = {
   updateTransportStatus: (id: string | number, status: string, position?: { lat: number; lng: number }) => apiData<AdminTransport>(`/transports/${id}/status`, { method: 'PUT', json: { status, ...position } }),
   recordPosition: (id: string | number, input: { lat: number; lng: number; label: string }) => apiData<unknown>(`/transports/${id}/positions`, { method: 'POST', json: input }),
   reviewTransport: (id: string | number, input: { toId: string | number; rating: number; comment?: string }) => apiData<AdminReview>(`/transports/${id}/reviews`, { method: 'POST', json: input }),
+}
+
+// ───────────────────────── Appels vocaux (WebRTC) ─────────────────────────
+
+export type CallStatus = 'ringing' | 'accepted' | 'declined' | 'missed' | 'cancelled' | 'ended'
+export type CallInfo = {
+  id: ApiId; status: CallStatus; direction: 'outgoing' | 'incoming'
+  peer: { id: ApiId; displayName: string; role: string }
+  /** Description de session de l'appelant : transmise uniquement au destinataire pendant la sonnerie. */
+  offer: string | null
+  /** Réponse du destinataire : transmise uniquement à l'appelant une fois l'appel décroché. */
+  answer: string | null
+  createdAt: string; answeredAt: string | null; endedAt: string | null; endReason: string | null; durationSeconds: number
+}
+export type IceServerDto = { urls: string | string[]; username?: string; credential?: string }
+
+export const callApi = {
+  /** Appel en cours (sonnerie ou conversation) ou null : interrogé régulièrement pour détecter un appel entrant. */
+  current: () => apiData<CallInfo | null>('/calls/current'),
+  iceServers: () => apiData<IceServerDto[]>('/calls/ice-servers'),
+  start: (input: { toId: string | number; offer: string }) => apiData<CallInfo>('/calls', { method: 'POST', json: input }),
+  show: (id: string | number) => apiData<CallInfo>(`/calls/${id}`),
+  accept: (id: string | number, answer: string) => apiData<CallInfo>(`/calls/${id}/accept`, { method: 'POST', json: { answer } }),
+  decline: (id: string | number) => apiData<CallInfo>(`/calls/${id}/decline`, { method: 'POST' }),
+  end: (id: string | number) => apiData<CallInfo>(`/calls/${id}/end`, { method: 'POST' }),
+  /** Fermeture de l'onglet en pleine conversation : la requête doit partir même si la page se décharge (keepalive). */
+  endOnUnload: (id: string | number) => {
+    try {
+      void fetch(`${API_BASE_URL}/calls/${id}/end`, { method: 'POST', keepalive: true, headers: { Accept: 'application/json', Authorization: `Bearer ${getToken() ?? ''}` } }).catch(() => undefined)
+    } catch { /* page en cours de fermeture : sans importance */ }
+  },
 }
